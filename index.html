@@ -1,0 +1,384 @@
+
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#101b2d">
+<title>Motoboy Pelotas</title>
+<style>
+:root {
+  --bg: #f3f6fa;
+  --card: #ffffff;
+  --text: #152238;
+  --muted: #69778b;
+  --primary: #087e67;
+  --border: #e1e7ef;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: Arial, sans-serif;
+}
+header {
+  background: #101b2d;
+  color: white;
+  padding: 22px 18px 25px;
+}
+.brand {
+  font-size: 21px;
+  font-weight: 800;
+  letter-spacing: -.5px;
+}
+.brand span { color: #54d6b0; }
+header p {
+  margin: 9px 0 0;
+  color: #c0cada;
+  font-size: 14px;
+}
+main {
+  max-width: 520px;
+  margin: auto;
+  padding: 18px 15px 35px;
+}
+.tabs {
+  display: flex;
+  background: #e5eaf1;
+  border-radius: 12px;
+  padding: 4px;
+  gap: 4px;
+  margin-bottom: 19px;
+}
+.tabs button {
+  flex: 1;
+  border: 0;
+  padding: 12px 5px;
+  border-radius: 9px;
+  background: transparent;
+  color: #526176;
+  font-weight: 700;
+}
+.tabs button.active {
+  background: white;
+  color: var(--primary);
+  box-shadow: 0 1px 4px #17253b15;
+}
+h1 { font-size: 25px; margin: 5px 0 8px; }
+.intro {
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.5;
+  margin: 0 0 20px;
+}
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 18px;
+  margin-bottom: 15px;
+  box-shadow: 0 4px 16px #16243b08;
+}
+.card h2 { font-size: 17px; margin: 0 0 16px; }
+label {
+  display: block;
+  font-size: 13px;
+  font-weight: 700;
+  margin: 13px 0 7px;
+}
+input, select, textarea {
+  display: block;
+  width: 100%;
+  border: 1px solid #d6deea;
+  border-radius: 10px;
+  padding: 13px 12px;
+  background: white;
+  color: #152238;
+  font: inherit;
+  font-size: 14px;
+}
+input:focus, select:focus {
+  outline: 2px solid #a4e6d6;
+  border-color: var(--primary);
+}
+button.primary {
+  width: 100%;
+  background: var(--primary);
+  color: white;
+  border: 0;
+  border-radius: 11px;
+  padding: 15px;
+  margin-top: 16px;
+  font-size: 15px;
+  font-weight: 800;
+  cursor: pointer;
+}
+button.secondary {
+  width: 100%;
+  background: white;
+  color: var(--primary);
+  border: 1px solid var(--primary);
+  border-radius: 10px;
+  padding: 12px;
+  margin-top: 10px;
+  font-weight: 700;
+}
+.price {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #eaf8f3;
+  padding: 14px;
+  border-radius: 11px;
+  margin-top: 17px;
+}
+.price strong { color: #076d58; font-size: 23px; }
+.small { color: var(--muted); font-size: 12px; line-height: 1.5; }
+.status {
+  background: #fff5d9;
+  border-radius: 10px;
+  padding: 13px;
+  margin-top: 14px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.hidden { display: none; }
+footer {
+  text-align: center;
+  padding: 10px 20px 28px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.pill {
+  display: inline-block;
+  color: #087e67;
+  background: #e6f7f1;
+  border-radius: 30px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 700;
+}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">MOTOBOY <span>PELOTAS</span></div>
+  <p>Suas entregas pela cidade, de um jeito mais simples.</p>
+</header>
+
+<main>
+  <div class="tabs">
+    <button id="tabCliente" class="active" onclick="showTab('cliente')">
+      Solicitar entrega
+    </button>
+    <button id="tabMoto" onclick="showTab('moto')">
+      Sou motoboy
+    </button>
+  </div>
+
+  <section id="cliente">
+    <h1>O que vamos entregar?</h1>
+    <p class="intro">Informe os endereços e veja uma estimativa do valor da corrida.</p>
+
+    <div class="card">
+      <h2>Detalhes da entrega</h2>
+
+      <form id="deliveryForm">
+        <label for="origem">Endereço de retirada</label>
+        <input id="origem" placeholder="Rua, número e bairro" required>
+
+        <label for="destino">Endereço de entrega</label>
+        <input id="destino" placeholder="Rua, número e bairro" required>
+
+        <label for="tipo">O que será transportado?</label>
+        <select id="tipo">
+          <option>Documento ou envelope</option>
+          <option>Pequena encomenda</option>
+          <option>Compra de loja</option>
+          <option>Outro item permitido</option>
+        </select>
+
+        <label for="distancia">Distância estimada</label>
+        <select id="distancia">
+          <option value="3">Até 3 km</option>
+          <option value="5">Até 5 km</option>
+          <option value="8">Até 8 km</option>
+          <option value="12">Até 12 km</option>
+        </select>
+
+        <div class="price">
+          <div>
+            <div class="small">Preço demonstrativo</div>
+            <div class="small">Sujeito à tarifa futura</div>
+          </div>
+          <strong id="valor">R$ 9,00</strong>
+        </div>
+
+        <button class="primary" type="submit">
+          Solicitar motoboy
+        </button>
+      </form>
+
+      <p class="small">
+        Protótipo de testes. Esta cotação é ilustrativa e não representa
+        um preço comercial confirmado.
+      </p>
+    </div>
+
+    <div id="pedido" class="card hidden" aria-live="polite">
+      <span class="pill">Pedido de demonstração</span>
+      <h2 style="margin-top:14px">Sua entrega</h2>
+      <div id="resumo" class="small"></div>
+      <div id="estado" class="status">
+        Aguardando teste de distribuição.
+      </div>
+      <button class="secondary" onclick="cancelarPedido()">
+        Cancelar pedido de teste
+      </button>
+    </div>
+  </section>
+
+  <section id="moto" class="hidden">
+    <h1>Área do motoboy</h1>
+    <p class="intro">Veja como será a experiência de quem realiza as entregas.</p>
+
+    <div class="card">
+      <h2>Disponibilidade</h2>
+      <p class="small">Ative o modo de teste para receber uma corrida demonstrativa.</p>
+      <button id="disponivel" class="primary" onclick="alternarDisponibilidade()">
+        Ficar disponível
+      </button>
+      <div id="motoStatus" class="status">
+        Você está offline no protótipo.
+      </div>
+    </div>
+
+    <div id="oferta" class="card hidden">
+      <span class="pill">Nova oferta de teste</span>
+      <h2 style="margin-top:14px">Entrega em Pelotas</h2>
+      <div id="ofertaResumo" class="small"></div>
+      <button class="primary" onclick="aceitarCorrida()">
+        Aceitar corrida de teste
+      </button>
+      <button class="secondary" onclick="recusarCorrida()">
+        Recusar corrida
+      </button>
+    </div>
+  </section>
+</main>
+
+<footer>
+  Motoboy Pelotas · Protótipo inicial · Não realiza entregas reais.
+</footer>
+
+<script>
+let currentOrder = null;
+let isAvailable = false;
+let accepted = false;
+
+const money = value => value.toLocaleString("pt-BR", {
+  style: "currency",
+  currency: "BRL"
+});
+
+function showTab(tab) {
+  document.getElementById("cliente").classList.toggle("hidden", tab !== "cliente");
+  document.getElementById("moto").classList.toggle("hidden", tab !== "moto");
+  document.getElementById("tabCliente").classList.toggle("active", tab === "cliente");
+  document.getElementById("tabMoto").classList.toggle("active", tab === "moto");
+}
+
+function updatePrice() {
+  const km = Number(document.getElementById("distancia").value);
+  const price = 6 + km;
+  document.getElementById("valor").textContent = money(price);
+  return price;
+}
+
+document.getElementById("distancia").addEventListener("change", updatePrice);
+
+document.getElementById("deliveryForm").addEventListener("submit", function(event) {
+  event.preventDefault();
+
+  currentOrder = {
+    origem: document.getElementById("origem").value.trim(),
+    destino: document.getElementById("destino").value.trim(),
+    tipo: document.getElementById("tipo").value,
+    valor: updatePrice()
+  };
+
+  accepted = false;
+  document.getElementById("pedido").classList.remove("hidden");
+  document.getElementById("resumo").textContent =
+    "Retirada: " + currentOrder.origem +
+    " | Destino: " + currentOrder.destino +
+    " | Item: " + currentOrder.tipo +
+    " | Valor estimado: " + money(currentOrder.valor);
+
+  document.getElementById("estado").textContent =
+    isAvailable
+    ? "Pedido de teste criado. Um motoboy de demonstração está disponível."
+    : "Pedido de teste criado. Nenhum motoboy de demonstração está disponível ainda.";
+
+  document.getElementById("ofertaResumo").textContent =
+    "Retirada: " + currentOrder.origem +
+    " | Destino: " + currentOrder.destino +
+    " | Valor ilustrativo: " + money(currentOrder.valor);
+
+  document.getElementById("oferta").classList.toggle("hidden", !isAvailable);
+  document.getElementById("pedido").scrollIntoView({behavior:"smooth"});
+});
+
+function alternarDisponibilidade() {
+  isAvailable = !isAvailable;
+
+  document.getElementById("disponivel").textContent =
+    isAvailable ? "Ficar offline" : "Ficar disponível";
+
+  document.getElementById("motoStatus").textContent =
+    isAvailable
+    ? "Modo de teste ativo. Você está disponível nesta demonstração."
+    : "Você está offline no protótipo.";
+
+  document.getElementById("oferta").classList.toggle(
+    "hidden", !(isAvailable && currentOrder && !accepted)
+  );
+
+  if (currentOrder && !accepted) {
+    document.getElementById("estado").textContent =
+      isAvailable
+      ? "Um motoboy de demonstração está disponível."
+      : "Nenhum motoboy de demonstração está disponível.";
+  }
+}
+
+function aceitarCorrida() {
+  if (!currentOrder || !isAvailable) return;
+  accepted = true;
+  document.getElementById("motoStatus").textContent =
+    "Corrida de teste aceita. Retire o item no endereço informado.";
+  document.getElementById("estado").textContent =
+    "Corrida aceita na demonstração. Ainda não existe motoboy real vinculado.";
+  document.getElementById("oferta").classList.add("hidden");
+}
+
+function recusarCorrida() {
+  document.getElementById("oferta").classList.add("hidden");
+  document.getElementById("motoStatus").textContent =
+    "Oferta recusada no teste. A distribuição automática real será implementada depois.";
+  document.getElementById("estado").textContent =
+    "Oferta recusada na demonstração. Ainda não existe distribuição real.";
+}
+
+function cancelarPedido() {
+  currentOrder = null;
+  accepted = false;
+  document.getElementById("pedido").classList.add("hidden");
+  document.getElementById("oferta").classList.add("hidden");
+}
+
+updatePrice();
+</script>
+</body>
+</html>

@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#101b2d">
+<title>Motoboy Pelotas</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
+<style>
+:root { --bg:#f3f6fa; --card:#ffffff; --text:#152238; --muted:#69778b; --primary:#087e67; --border:#e1e7ef; }
+* { box-sizing: border-box; }
+body { margin:0; background:var(--bg); color:var(--text); font-family:Arial, sans-serif; }
+header { background:#101b2d; color:white; padding:22px 18px 25px; }
+.brand { font-size:21px; font-weight:800; letter-spacing:-.5px; }
+.brand span { color:#54d6b0; }
+header p { margin:9px 0 0; color:#c0cada; font-size:14px; }
+main { max-width:520px; margin:auto; padding:18px 15px 35px; }
+.tabs { display:flex; background:#e5eaf1; border-radius:12px; padding:4px; gap:4px; margin-bottom:19px; }
+.tabs button { flex:1; border:0; padding:12px 5px; border-radius:9px; background:transparent; color:#526176; font-weight:700; }
+.tabs button.active { background:white; color:var(--primary); box-shadow:0 1px 4px #17253b15; }
+h1 { font-size:25px; margin:5px 0 8px; }
+.intro { color:var(--muted); font-size:14px; line-height:1.5; margin:0 0 20px; }
+.card { background:var(--card); border:1px solid var(--border); border-radius:16px; padding:18px; margin-bottom:15px; box-shadow:0 4px 16px #16243b08; }
+.card h2 { font-size:17px; margin:0 0 16px; }
+label { display:block; font-size:13px; font-weight:700; margin:13px 0 7px; }
+input, select { display:block; width:100%; border:1px solid #d6deea; border-radius:10px; padding:13px 12px; background:white; color:#152238; font:inherit; font-size:14px; }
+input:focus, select:focus { outline:2px solid #a4e6d6; border-color:var(--primary); }
+button.primary { width:100%; background:var(--primary); color:white; border:0; border-radius:11px; padding:15px; margin-top:16px; font-size:15px; font-weight:800; cursor:pointer; }
+button.primary:disabled { opacity:.6; }
+button.secondary { width:100%; background:white; color:var(--primary); border:1px solid var(--primary); border-radius:10px; padding:12px; margin-top:10px; font-weight:700; cursor:pointer; }
+.price { display:flex; justify-content:space-between; align-items:center; background:#eaf8f3; padding:14px; border-radius:11px; margin-top:17px; }
+.price strong { color:#076d58; font-size:23px; }
+.small { color:var(--muted); font-size:12px; line-height:1.5; }
+.status { background:#fff5d9; border-radius:10px; padding:13px; margin-top:14px; font-size:14px; line-height:1.5; }
+.hidden { display:none; }
+footer { text-align:center; padding:10px 20px 28px; color:var(--muted); font-size:12px; }
+main { padding-bottom:120px; }
+.seg { display:flex; background:#e5eaf1; border-radius:12px; padding:4px; gap:4px; margin-bottom:15px; }
+.seg button { flex:1; border:0; padding:11px 5px; border-radius:9px; background:transparent; color:#526176; font-weight:700; cursor:pointer; }
+.seg button.active { background:white; color:var(--primary); box-shadow:0 1px 4px #17253b15; }
+#mapa { height:270px; border-radius:16px; border:1px solid var(--border); margin-bottom:12px; z-index:0; }
+#motoBar { position:fixed; left:0; right:0; bottom:0; z-index:1500; padding:12px 15px calc(12px + env(safe-area-inset-bottom)); background:linear-gradient(transparent, var(--bg) 35%); }
+#motoBar button { max-width:490px; margin:0 auto; display:block; margin-top:0; padding:18px; font-size:17px; border-radius:40px; }
+button.primary.off { background:#b8372a; }
+.sheet { position:fixed; left:0; right:0; bottom:0; z-index:2000; background:white; border-radius:20px 20px 0 0; box-shadow:0 -6px 30px #10182840; padding:18px 18px calc(18px + env(safe-area-inset-bottom)); }
+.sheet > div, .sheet > button { max-width:490px; margin-left:auto; margin-right:auto; }
+.sheet h2 { font-size:34px; margin:12px 0 6px; }
+.tempo { height:6px; background:#e1e7ef; border-radius:4px; overflow:hidden; margin:14px auto 4px; }
+#barraTempo { height:100%; width:100%; background:var(--primary); }
+.total { font-size:34px; font-weight:800; color:#076d58; margin:4px 0 6px; }
+.corrida-item { display:flex; justify-content:space-between; gap:12px; padding:12px 0; border-top:1px solid var(--border); font-size:13px; }
+.corrida-item strong { color:#076d58; white-space:nowrap; }
+.pill { display:inline-block; color:#087e67; background:#e6f7f1; border-radius:30px; padding:6px 10px; font-size:12px; font-weight:700; }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">MOTOBOY <span>PELOTAS</span></div>
+  <p>Suas entregas pela cidade, de um jeito mais simples.</p>
+</header>
+
+<main>
+  <div class="tabs">
+    <button id="tabCliente" class="active" onclick="showTab('cliente')">Solicitar entrega</button>
+    <button id="tabMoto" onclick="showTab('moto')">Sou motoboy</button>
+  </div>
+
+  <section id="cliente">
+    <h1>O que vamos entregar?</h1>
+    <p class="intro">Informe os endereços e veja uma estimativa do valor da corrida.</p>
+
+    <div class="card">
+      <h2>Detalhes da entrega</h2>
+      <form id="deliveryForm">
+        <label for="origem">Endereço de retirada</label>
+        <input id="origem" placeholder="Rua, número e bairro" required minlength="3">
+
+        <label for="destino">Endereço de entrega</label>
+        <input id="destino" placeholder="Rua, número e bairro" required minlength="3">
+
+        <label for="tipo">O que será transportado?</label>
+        <select id="tipo">
+          <option>Documento ou envelope</option>
+          <option>Pequena encomenda</option>
+          <option>Compra de loja</option>
+          <option>Outro item permitido</option>
+        </select>
+
+        <label for="distancia">Distância estimada</label>
+        <select id="distancia">
+          <option value="3">Até 3 km</option>
+          <option value="5">Até 5 km</option>
+          <option value="8">Até 8 km</option>
+          <option value="12">Até 12 km</option>
+        </select>
+
+        <div class="price">
+          <div>
+            <div class="small">Preço demonstrativo</div>
+            <div class="small">Sujeito à tarifa futura</div>
+          </div>
+          <strong id="valor">R$ 9,00</strong>
+        </div>
+
+        <button class="primary" type="submit">Solicitar motoboy</button>
+      </form>
+      <p class="small">Protótipo de testes. Esta cotação é ilustrativa e não representa um preço comercial confirmado.</p>
+    </div>
+
+    <div id="pedido" class="card hidden" aria-live="polite">
+      <span class="pill">Pedido de teste</span>
+      <h2 style="margin-top:14px">Sua entrega</h2>
+      <div id="resumo" class="small"></div>
+      <div id="estado" class="status">Procurando um motoboy disponível…</div>
+      <button class="secondary" onclick="cancelarPedido()">Cancelar pedido</button>
+    </div>
+  </section>
+
+  <section id="moto" class="hidden">
+    <div class="seg">
+      <button id="segInicio" class="active" onclick="motoAba('inicio')">Início</button>
+      <button id="segGanhos" onclick="motoAba('ganhos')">Ganhos</button>
+    </div>
+
+    <div id="motoInicio">
+      <div class="card">
+        <label for="motoNome" style="margin-top:0">Seu nome</label>
+        <input id="motoNome" placeholder="Como o cliente vai ver você" maxlength="60">
+      </div>
+      <div id="mapa"></div>
+      <div id="motoStatus" class="status" style="margin-top:0">Você está offline.</div>
+
+      <div id="corrida" class="card hidden" style="margin-top:15px">
+        <span class="pill">Corrida em andamento</span>
+        <h2 id="corridaTitulo" style="margin-top:14px"></h2>
+        <div id="corridaInfo" class="small"></div>
+        <label for="codigoEntrega" id="codigoLabel" class="hidden">Código de confirmação do destinatário</label>
+        <input id="codigoEntrega" class="hidden" inputmode="numeric" maxlength="4" placeholder="4 dígitos">
+        <button id="corridaBtn" class="primary" onclick="avancar()"></button>
+      </div>
+    </div>
+
+    <div id="motoGanhos" class="hidden">
+      <div class="card">
+        <h2>Ganhos de hoje</h2>
+        <div id="ganhosTotal" class="total">R$ 0,00</div>
+        <div id="ganhosResumo" class="small"></div>
+        <div id="ganhosLista"></div>
+        <p class="small">Valor bruto das entregas, sem desconto de taxa do app.</p>
+      </div>
+    </div>
+  </section>
+</main>
+
+<div id="motoBar" class="hidden">
+  <button id="disponivel" class="primary" onclick="alternarDisponibilidade()">Ficar online</button>
+</div>
+
+<div id="oferta" class="sheet hidden">
+  <div><span class="pill">Nova corrida</span></div>
+  <div><h2 id="ofertaPreco"></h2></div>
+  <div id="ofertaResumo" class="small"></div>
+  <div class="tempo"><div id="barraTempo"></div></div>
+  <button class="primary" onclick="aceitarCorrida()">Aceitar corrida</button>
+  <button class="secondary" onclick="recusarCorrida()">Recusar</button>
+</div>
+
+<footer>Motoboy Pelotas · Protótipo inicial · Não realiza entregas reais.</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+const SUPABASE_URL = "https://waalgvcywtfnrrpkrhti.supabase.co";
+const SUPABASE_KEY = "sb_publishable_WyS8WAbEYuFRreO-1G32qA_ppERhliT"; // chave pública (publishable): pode ficar no site
+const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+const $ = id => document.getElementById(id);
+const money = v => Number(v).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+
+let pedidoId = null, codigo = "", timerCliente = null;
+let disponivel = false, ocupado = false, ofertaAtual = null, timerMoto = null;
+const recusados = new Set();
+
+function showTab(tab) {
+  abaAtual = tab;
+  $("cliente").classList.toggle("hidden", tab !== "cliente");
+  $("moto").classList.toggle("hidden", tab !== "moto");
+  $("tabCliente").classList.toggle("active", tab === "cliente");
+  $("tabMoto").classList.toggle("active", tab === "moto");
+  if (tab === "moto") { iniciarMapa(); setTimeout(() => mapa && mapa.invalidateSize(), 60); }
+  atualizarBarra();
+}
+
+function atualizarPreco() {
+  $("valor").textContent = money(6 + Number($("distancia").value));
+}
+$("distancia").addEventListener("change", atualizarPreco);
+
+// ---------- cliente ----------
+$("deliveryForm").addEventListener("submit", async event => {
+  event.preventDefault();
+  const botao = event.target.querySelector('button[type="submit"]');
+  botao.disabled = true;
+  try {
+    const { data, error } = await db.rpc("criar_pedido", {
+      p_retirada: $("origem").value.trim(),
+      p_entrega: $("destino").value.trim(),
+      p_item: $("tipo").value,
+      p_km: Number($("distancia").value)
+    });
+    if (error) throw error;
+    const p = Array.isArray(data) ? data[0] : data;
+    pedidoId = p.pedido_id;
+    codigo = p.cod;
+    $("resumo").textContent = "Retirada: " + $("origem").value.trim() +
+      " | Entrega: " + $("destino").value.trim() +
+      " | Item: " + $("tipo").value + " | Valor: " + money(p.valor);
+    $("estado").textContent = "Procurando um motoboy disponível…";
+    $("pedido").classList.remove("hidden");
+    $("pedido").scrollIntoView({ behavior: "smooth" });
+    clearInterval(timerCliente);
+    timerCliente = setInterval(acompanhar, 3000);
+  } catch (err) {
+    console.error("Erro ao registrar pedido:", err);
+    alert("Não foi possível registrar o pedido. Confira a conexão e tente novamente.");
+  } finally {
+    botao.disabled = false;
+  }
+});
+
+async function acompanhar() {
+  if (!pedidoId) return;
+  const { data, error } = await db.rpc("status_pedido", { p_id: pedidoId });
+  const s = data && data[0];
+  if (error || !s) return;
+  if (s.status === "aceito") {
+    $("estado").textContent = s.motoboy_nome + " aceitou sua entrega e está a caminho. Código de confirmação: " + codigo;
+  } else if (s.status === "coletado") {
+    $("estado").textContent = s.motoboy_nome + " coletou o item e está a caminho do destino. Código de confirmação: " + codigo;
+  } else if (s.status === "entregue") {
+    $("estado").textContent = "Entrega concluída! Obrigado por usar o Motoboy Pelotas.";
+    clearInterval(timerCliente);
+  } else if (s.status === "cancelado") {
+    $("estado").textContent = "Pedido cancelado.";
+    clearInterval(timerCliente);
+  } else {
+    $("estado").textContent = "Procurando um motoboy disponível…";
+  }
+}
+
+async function cancelarPedido() {
+  if (pedidoId) {
+    const { data } = await db.rpc("cancelar_pedido", { p_id: pedidoId });
+    if (data === false) { alert("Este pedido não pode mais ser cancelado."); return; }
+  }
+  clearInterval(timerCliente);
+  pedidoId = null;
+  $("pedido").classList.add("hidden");
+}
+
+// ---------- motoboy ----------
+let abaAtual = "cliente", motoAbaAtual = "inicio", mapa = null, marcador = null;
+let corrida = null, timerOferta = null;
+const guardar = {
+  ler: k => { try { return localStorage.getItem(k) || ""; } catch { return ""; } },
+  gravar: (k, v) => { try { localStorage.setItem(k, v); } catch {} }
+};
+
+function atualizarBarra() {
+  $("motoBar").classList.toggle("hidden", !(abaAtual === "moto" && motoAbaAtual === "inicio" && !ocupado));
+}
+
+function motoAba(a) {
+  motoAbaAtual = a;
+  $("motoInicio").classList.toggle("hidden", a !== "inicio");
+  $("motoGanhos").classList.toggle("hidden", a !== "ganhos");
+  $("segInicio").classList.toggle("active", a === "inicio");
+  $("segGanhos").classList.toggle("active", a === "ganhos");
+  if (a === "ganhos") carregarGanhos(); else setTimeout(() => mapa && mapa.invalidateSize(), 60);
+  atualizarBarra();
+}
+
+function iniciarMapa() {
+  if (mapa || !window.L) return;
+  mapa = L.map("mapa", { zoomControl: false }).setView([-31.7719, -52.3426], 13);
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "© OpenStreetMap" }).addTo(mapa);
+  if (!navigator.geolocation) return;
+  navigator.geolocation.watchPosition(p => {
+    const ll = [p.coords.latitude, p.coords.longitude];
+    if (!marcador) {
+      marcador = L.circleMarker(ll, { radius: 9, color: "#fff", weight: 3, fillColor: "#087e67", fillOpacity: 1 }).addTo(mapa);
+      mapa.setView(ll, 15);
+    } else marcador.setLatLng(ll);
+  }, () => {}, { enableHighAccuracy: true });
+}
+
+function alternarDisponibilidade() {
+  const nome = $("motoNome").value.trim();
+  if (!disponivel && nome.length < 2) {
+    alert("Digite seu nome para ficar online.");
+    $("motoNome").focus();
+    return;
+  }
+  guardar.gravar("motoNome", nome);
+  disponivel = !disponivel;
+  $("disponivel").textContent = disponivel ? "Ficar offline" : "Ficar online";
+  $("disponivel").classList.toggle("off", disponivel);
+  $("motoStatus").textContent = disponivel ? "Você está online. Procurando corridas…" : "Você está offline.";
+  clearInterval(timerMoto);
+  if (disponivel) {
+    buscarOfertas();
+    timerMoto = setInterval(buscarOfertas, 3000);
+  } else {
+    esconderOferta();
+  }
+}
+
+function mostrarOferta(o) {
+  ofertaAtual = o;
+  $("ofertaPreco").textContent = money(o.preco);
+  $("ofertaResumo").textContent = "Retirada: " + o.retirada + " | Entrega: " + o.entrega + " | Item: " + o.item;
+  const b = $("barraTempo");
+  b.style.transition = "none";
+  b.style.width = "100%";
+  void b.offsetWidth;
+  b.style.transition = "width 30s linear";
+  b.style.width = "0%";
+  clearTimeout(timerOferta);
+  timerOferta = setTimeout(recusarCorrida, 30000);
+  $("oferta").classList.remove("hidden");
+}
+
+function esconderOferta() {
+  clearTimeout(timerOferta);
+  ofertaAtual = null;
+  $("oferta").classList.add("hidden");
+}
+
+async function buscarOfertas() {
+  if (!disponivel || ocupado) return;
+  const { data, error } = await db.rpc("pedidos_abertos");
+  if (error) return;
+  const o = (data || []).find(x => !recusados.has(x.id)) || null;
+  if (!o) return esconderOferta();
+  if (!ofertaAtual || ofertaAtual.id !== o.id) mostrarOferta(o);
+}
+
+async function aceitarCorrida() {
+  const o = ofertaAtual;
+  if (!o) return;
+  const { data, error } = await db.rpc("aceitar_pedido", { p_id: o.id, p_motoboy: $("motoNome").value.trim() });
+  if (error) { alert("Não foi possível aceitar. Tente novamente."); return; }
+  esconderOferta();
+  if (data) {
+    corrida = { ...o, status: "aceito" };
+    ocupado = true;
+    mostrarCorrida();
+  } else {
+    recusados.add(o.id);
+    $("motoStatus").textContent = "Outro motoboy aceitou antes de você.";
+    buscarOfertas();
+  }
+}
+
+function recusarCorrida() {
+  if (ofertaAtual) recusados.add(ofertaAtual.id);
+  esconderOferta();
+  buscarOfertas();
+}
+
+function mostrarCorrida() {
+  const c = corrida, coletando = c.status === "aceito";
+  $("corrida").classList.remove("hidden");
+  $("corridaTitulo").textContent = coletando ? "Vá retirar o item" : "Leve até o destino";
+  $("corridaInfo").textContent = (coletando ? "Retirada: " + c.retirada : "Entrega: " + c.entrega) +
+    " | Item: " + c.item + " | Valor: " + money(c.preco);
+  $("codigoLabel").classList.toggle("hidden", coletando);
+  $("codigoEntrega").classList.toggle("hidden", coletando);
+  $("corridaBtn").textContent = coletando ? "Já coletei o item" : "Concluir entrega";
+  $("motoStatus").textContent = coletando ? "Corrida aceita. Siga até o local de retirada." : "Item coletado. Siga até o destino.";
+  atualizarBarra();
+}
+
+function encerrarCorrida(mensagem) {
+  corrida = null;
+  ocupado = false;
+  $("corrida").classList.add("hidden");
+  $("codigoEntrega").value = "";
+  $("motoStatus").textContent = mensagem;
+  atualizarBarra();
+  buscarOfertas();
+}
+
+async function avancar() {
+  const c = corrida;
+  if (!c) return;
+  const { data, error } = await db.rpc("avancar_pedido", {
+    p_id: c.id, p_motoboy: $("motoNome").value.trim(), p_codigo: $("codigoEntrega").value.trim()
+  });
+  if (error) { alert("Não foi possível atualizar. Tente novamente."); return; }
+  if (data === "coletado") { c.status = "coletado"; mostrarCorrida(); }
+  else if (data === "entregue") encerrarCorrida("Entrega concluída! Veja em Ganhos.");
+  else if (data === "codigo_errado") alert("Código incorreto. Peça ao destinatário o código de 4 dígitos.");
+  else encerrarCorrida("Esta corrida foi cancelada.");
+}
+
+// Recupera a corrida ao recarregar a página e percebe se o cliente cancelou.
+async function sincronizar() {
+  const nome = $("motoNome").value.trim();
+  if (nome.length < 2) return;
+  const { data, error } = await db.rpc("minha_corrida", { p_motoboy: nome });
+  if (error) return;
+  const c = data && data[0];
+  if (c) { corrida = c; ocupado = true; mostrarCorrida(); }
+  else if (corrida) encerrarCorrida("O cliente cancelou a corrida.");
+}
+
+async function carregarGanhos() {
+  const nome = $("motoNome").value.trim();
+  const lista = $("ganhosLista");
+  lista.textContent = "";
+  if (nome.length < 2) {
+    $("ganhosResumo").textContent = "Digite seu nome na aba Início para ver seus ganhos.";
+    return;
+  }
+  const { data, error } = await db.rpc("ganhos", { p_motoboy: nome });
+  if (error) { $("ganhosResumo").textContent = "Não foi possível carregar agora."; return; }
+  const todas = data || [];
+  const hoje = new Date().toDateString();
+  const dia = todas.filter(g => new Date(g.entregue_em).toDateString() === hoje);
+  const soma = a => a.reduce((s, g) => s + Number(g.preco), 0);
+  $("ganhosTotal").textContent = money(soma(dia));
+  $("ganhosResumo").textContent = dia.length + " entrega(s) hoje | " + todas.length + " no total (" + money(soma(todas)) + ")";
+  todas.forEach(g => {
+    const linha = document.createElement("div");
+    linha.className = "corrida-item";
+    const texto = document.createElement("span");
+    texto.textContent = g.retirada + " → " + g.entrega;
+    const valor = document.createElement("strong");
+    valor.textContent = money(g.preco);
+    linha.append(texto, valor);
+    lista.append(linha);
+  });
+}
+
+$("motoNome").value = guardar.ler("motoNome");
+sincronizar();
+setInterval(sincronizar, 4000);
+
+atualizarPreco();
+</script>
+</body>
+</html>

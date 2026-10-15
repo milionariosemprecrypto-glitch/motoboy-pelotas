@@ -15,7 +15,7 @@ async function carregar() {
   if (p) { $("cNome").value = p.nome || ""; $("cTel").value = p.telefone || ""; }
   if (m.status === "bloqueado") show("telaBloqueado", true);
   else if (m.status === "aprovado") {
-    aprovado = true; show("telaTrabalho", true); iniciarMapa(); sincronizar();
+    aprovado = true; show("telaTrabalho", true); iniciarMapa(); sincronizar(); carregarGanhos();
     iniciarPush("motoboy", d => { if (d.tipo === "nova_corrida" && !disponivel) alternarDisponibilidade(); else buscarOfertas(); });
   }
   else if (!m.enviado_em) show("telaCadastro", true);
@@ -55,6 +55,7 @@ $("cadForm").addEventListener("submit", async ev => {
 // ---------- trabalho ----------
 function atualizarBarra() {
   show("motoBar", aprovado && motoAbaAtual === "inicio" && !ocupado && !!usuario);
+  if (aprovado) atualizarPainel();
 }
 
 function motoAba(a) {
@@ -68,15 +69,14 @@ function motoAba(a) {
 
 function iniciarMapa() {
   if (mapa) return;
-  mapa = L.map("mapa", { zoomControl: false }).setView(PELOTAS, 13);
-  L.tileLayer(TILES, { maxZoom: 19, attribution: TILES_ATTR }).addTo(mapa);
-  setTimeout(() => mapa.invalidateSize(), 100);
+  document.body.classList.add("modo-mapa");
+  mapa = criarMapa("mapa");
   if (!navigator.geolocation) return;
   navigator.geolocation.watchPosition(p => {
     const ll = [p.coords.latitude, p.coords.longitude];
     ultimaPos = ll;
     if (!marcador) {
-      marcador = L.circleMarker(ll, { radius: 9, color: "#0b0b0b", weight: 3, fillColor: COR.laranja, fillOpacity: 1 }).addTo(mapa);
+      marcador = L.marker(ll, { icon: icone.moto(), zIndexOffset: 1000 }).addTo(mapa);
       mapa.setView(ll, 15);
     } else marcador.setLatLng(ll);
   }, () => {}, { enableHighAccuracy: true });
@@ -106,11 +106,21 @@ async function localizacaoSegundoPlano(ligar) {
   } else if (!ligar && watcherBg) { await BG.removeWatcher({ id: watcherBg }); watcherBg = null; }
 }
 
+function centralizar() { if (ultimaPos) mapa.setView(ultimaPos, 16); else mapa.setView(PELOTAS, 14); }
+
+function atualizarPainel() {
+  $("motoStatusTitulo").textContent = ocupado ? "Em corrida" : disponivel ? "Procurando corridas" : "Você está offline";
+  show("barraBusca", disponivel && !ocupado);
+  $("disponivel").innerHTML = disponivel ? "✋" : "FICAR<br>ONLINE";
+  $("disponivel").classList.toggle("off", disponivel);
+  show("rotuloOffline", disponivel);
+  document.body.classList.toggle("em-corrida", ocupado);
+}
+
 function alternarDisponibilidade() {
   disponivel = !disponivel;
-  $("disponivel").textContent = disponivel ? "Ficar offline" : "Ficar online";
-  $("disponivel").classList.toggle("off", disponivel);
   $("motoStatus").textContent = disponivel ? "Você está online. Procurando corridas…" : "Você está offline.";
+  atualizarPainel();
   localizacaoSegundoPlano(disponivel || ocupado);
   if (ultimaPos) db.rpc("atualizar_local", { p_lat: ultimaPos[0], p_lng: ultimaPos[1], p_online: disponivel }).then(() => {});
   clearInterval(timerMoto);
@@ -129,9 +139,10 @@ function mostrarOferta(o) {
   clearTimeout(timerOferta);
   timerOferta = setTimeout(recusarCorrida, 30000);
   show("oferta", true);
+  Alerta.tocarChamada();   // toque em loop + vibração até aceitar/recusar/30 s
 }
 
-function esconderOferta() { clearTimeout(timerOferta); ofertaAtual = null; show("oferta", false); }
+function esconderOferta() { clearTimeout(timerOferta); Alerta.parar(); ofertaAtual = null; show("oferta", false); }
 
 async function buscarOfertas() {
   if (!disponivel || ocupado) return;
@@ -163,11 +174,10 @@ async function desenharCorrida(c) {
   camadasCorrida.forEach(x => x.remove()); camadasCorrida = [];
   if (!c || c.ret_lat == null) return;
   const alvo = c.status === "aceito" ? { lat: c.ret_lat, lng: c.ret_lng } : { lat: c.ent_lat, lng: c.ent_lng };
-  camadasCorrida.push(L.circleMarker([alvo.lat, alvo.lng], { radius: 10, color: "#0b0b0b", weight: 3,
-    fillColor: c.status === "aceito" ? COR.laranja : COR.branco, fillOpacity: 1 }).addTo(mapa));
+  camadasCorrida.push(L.marker([alvo.lat, alvo.lng], { icon: c.status === "aceito" ? icone.retirada() : icone.entrega() }).addTo(mapa));
   if (ultimaPos) {
     const r = await calcularRota({ lat: ultimaPos[0], lng: ultimaPos[1] }, alvo);
-    if (r) { camadasCorrida.push(L.polyline(r.linha, { color: COR.laranja, weight: 5 }).addTo(mapa)); mapa.fitBounds(r.linha, { padding: [30, 30] }); }
+    if (r) { camadasCorrida.push(L.polyline(r.linha, ROTA).addTo(mapa)); mapa.fitBounds(r.linha, { padding: [30, 30] }); }
   }
 }
 
@@ -231,6 +241,7 @@ async function carregarGanhos() {
   const dia = todas.filter(g => new Date(g.entregue_em).toDateString() === hoje);
   const soma = a => a.reduce((s, g) => s + Number(g.preco), 0);
   $("ganhosTotal").textContent = money(soma(dia));
+  $("pillValor").textContent = Number(soma(dia)).toLocaleString("pt-BR", { minimumFractionDigits: 2 });
   $("ganhosResumo").textContent = dia.length + " entrega(s) hoje | " + todas.length + " no total (" + money(soma(todas)) + ")";
   todas.forEach(g => {
     const linha = document.createElement("div"); linha.className = "corrida-item";

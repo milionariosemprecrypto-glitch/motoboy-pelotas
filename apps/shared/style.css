@@ -63,9 +63,9 @@ footer { text-align:center; padding:10px 20px 28px; color:#555; font-size:11px; 
 .tabs button.active, .seg button.active { background:var(--primary); color:#0b0b0b; }
 
 #mapa { height:300px; border-radius:18px; border:1px solid var(--border); margin-bottom:12px; z-index:0; }
-.leaflet-container { background:#111 !important; font-family:Poppins, Arial, sans-serif; }
-.leaflet-control-attribution { background:#0b0b0bcc !important; color:#777 !important; font-size:9px !important; }
-.leaflet-control-attribution a { color:#aaa !important; }
+.leaflet-container { background:#e9eef3 !important; font-family:Poppins, Arial, sans-serif; }
+.leaflet-control-attribution { background:#ffffffb0 !important; color:#8a94a0 !important; font-size:9px !important; }
+.leaflet-control-attribution a { color:#6b7785 !important; }
 .leaflet-bar a { background:#1d1d1d !important; color:var(--text) !important; border-color:var(--border) !important; }
 
 #motoBar { position:fixed; left:0; right:0; bottom:0; z-index:1500; padding:12px 15px calc(14px + env(safe-area-inset-bottom)); background:linear-gradient(transparent, var(--bg) 40%); }
@@ -89,5 +89,62 @@ footer { text-align:center; padding:10px 20px 28px; color:#555; font-size:11px; 
 .legal { font-size:12px; color:var(--muted); text-align:center; margin-top:14px; }
 .legal a { color:var(--primary); }
 .moto-icon { font-size:26px; filter:drop-shadow(0 0 6px #ff6a00); }
-/* Mapa escuro: inverte as cores dos tiles do OSM (marcadores e rotas não são afetados) */
-.leaflet-tile-pane { filter:invert(1) hue-rotate(180deg) brightness(.9) contrast(.85) saturate(.35); }
+
+/* ===== Mapa claro e suave (ambos os apps) ===== */
+.tiles-suaves { filter:grayscale(.75) brightness(1.06) contrast(.82) sepia(.08) hue-rotate(170deg) saturate(.8); }
+.leaflet-bar a { background:#fff !important; color:#111 !important; border-color:#e3e8ee !important; }
+.pin { width:30px; height:30px; border-radius:50%; display:grid; place-items:center; font:800 13px Poppins, sans-serif;
+  color:#fff; border:3px solid #fff; box-shadow:0 3px 10px #0004; }
+.pin-a { background:#ff6a00; } .pin-b { background:#111; }
+.pin-moto { width:40px; height:40px; border-radius:50%; background:#fff; display:grid; place-items:center; color:#111;
+  font-size:19px; transform:rotate(-45deg); box-shadow:0 3px 12px #0005, 0 0 0 4px #ff6a0040; animation:pulsar 2s infinite; }
+@keyframes pulsar { 0%,100% { box-shadow:0 3px 12px #0005, 0 0 0 4px #ff6a0040; } 50% { box-shadow:0 3px 12px #0005, 0 0 0 12px #ff6a0010; } }
+#mapa, #mapaPedido { border:0 !important; box-shadow:0 4px 18px #0006; }
+
+/* ===== Tela de trabalho do motoboy (estilo app de motorista) ===== */
+body.modo-mapa header, body.modo-mapa footer { display:none; }
+body.modo-mapa main { max-width:none; padding:0; }
+.mapa-full { position:fixed !important; inset:0; height:auto !important; border-radius:0 !important; margin:0 !important; box-shadow:none !important; }
+.fab { position:fixed; z-index:1700; width:48px; height:48px; border-radius:50%; border:0; background:#fff; color:#111;
+  box-shadow:0 3px 12px #0003; display:grid; place-items:center; cursor:pointer; }
+.fab svg, .icone-btn svg { width:22px; height:22px; fill:none; stroke:currentColor; stroke-width:2.2; stroke-linecap:round; }
+.fab-tl { top:calc(16px + env(safe-area-inset-top)); left:16px; }
+.fab-tr { top:calc(16px + env(safe-area-inset-top)); right:16px; }
+.fab-ganhos { right:16px; bottom:calc(220px + env(safe-area-inset-bottom)); }
+.pill-ganhos { position:fixed; z-index:1700; top:calc(16px + env(safe-area-inset-top)); left:50%; transform:translateX(-50%);
+  background:#0b0b0b; color:#fff; border:0; border-radius:30px; padding:10px 22px; font:700 22px Poppins, sans-serif;
+  box-shadow:0 4px 14px #0004; cursor:pointer; white-space:nowrap; }
+.pill-ganhos span { color:#ff6a00; font-weight:800; }
+#motoBar { position:fixed; left:50%; transform:translateX(-50%); right:auto; bottom:calc(178px + env(safe-area-inset-bottom));
+  z-index:1750; padding:0; background:none; text-align:center; }
+.btn-redondo { width:92px; height:92px; border-radius:50%; border:4px solid #fff; background:var(--grad); color:#0b0b0b;
+  font:italic 800 13px/1.15 Poppins, sans-serif; letter-spacing:.3px; cursor:pointer; box-shadow:0 8px 26px #ff6a0070, 0 2px 8px #0004; }
+.btn-redondo:active { transform:scale(.96); }
+.btn-redondo.off { background:#0b0b0b; color:#fff; font-size:34px; border-color:#ff6a00; box-shadow:0 0 0 6px #ff6a0030, 0 8px 22px #0005; }
+.rotulo-redondo { margin-top:6px; font:700 12px Poppins, sans-serif; color:#111; background:#fff; padding:3px 10px; border-radius:20px; box-shadow:0 2px 8px #0002; }
+.painel { position:fixed; left:0; right:0; bottom:0; z-index:1650; background:#fff; color:#111; border-radius:22px 22px 0 0;
+  box-shadow:0 -6px 24px #0002; padding:8px 18px calc(18px + env(safe-area-inset-bottom)); max-height:72vh; overflow:auto; }
+.painel .alca { width:42px; height:5px; border-radius:4px; background:#d5dbe2; margin:2px auto 8px; }
+.painel-topo { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.painel-titulo { flex:1; text-align:center; font:700 20px Poppins, sans-serif; }
+.icone-btn { width:40px; height:40px; border:0; background:none; color:#111; border-radius:50%; display:grid; place-items:center; cursor:pointer; }
+.icone-btn.active { color:#ff6a00; }
+.painel-sub { color:#5f6b78; font-size:13px; line-height:1.5; margin-top:8px; }
+.painel h2 { font-size:20px; margin:12px 0 4px; color:#111; }
+.painel .secondary { color:#111; border-color:#e1e6ec; }
+.painel input { background:#f3f5f8; color:#111; border-color:#e1e6ec; }
+.painel label { color:#5f6b78; }
+.painel .total { color:#ff6a00; }
+.painel .corrida-item { border-color:#eef1f4; }
+.barra-busca { height:4px; background:#eef1f4; border-radius:3px; overflow:hidden; margin:10px 0 2px; }
+.barra-busca i { display:block; height:100%; width:35%; background:var(--grad); border-radius:3px; animation:busca 1.4s ease-in-out infinite; }
+@keyframes busca { 0% { transform:translateX(-100%); } 100% { transform:translateX(300%); } }
+.sheet-oferta { background:#fff; color:#111; border-top:0; z-index:2100; box-shadow:0 -10px 40px #0005; }
+.sheet-oferta .small { color:#5f6b78; }
+.sheet-oferta .tempo { background:#eef1f4; }
+.sheet-oferta .secondary { color:#111; border-color:#e1e6ec; }
+.oferta-topo { display:flex; align-items:center; gap:10px; }
+.pulso { width:10px; height:10px; border-radius:50%; background:#ff6a00; animation:piscar 1s infinite; }
+@keyframes piscar { 50% { opacity:.2; } }
+#telaTrabalho:not(.hidden) { display:block; min-height:100vh; }
+body.em-corrida .fab-ganhos { display:none; }

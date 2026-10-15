@@ -11,13 +11,8 @@ async function carregar() {
   if (data && data[0]) mostrarPedido(data[0]);
 }
 
-const ponto = (ll, cor) => L.circleMarker(ll, { radius: 9, color: "#0b0b0b", weight: 3, fillColor: cor, fillOpacity: 1 });
-function novoMapa(id) {
-  const m = L.map(id).setView(PELOTAS, 13);
-  L.tileLayer(TILES, { maxZoom: 19, attribution: TILES_ATTR }).addTo(m);
-  setTimeout(() => m.invalidateSize(), 100);
-  return m;
-}
+const ponto = (ll, cor) => L.marker(ll, { icon: cor === COR.laranja ? icone.retirada() : icone.entrega() });
+const novoMapa = id => criarMapa(id);
 
 function iniciarMapa() {
   if (mapa) return;
@@ -33,7 +28,7 @@ async function desenhar() {
   if (!(origem && destino)) { if (origem || destino) mapa.setView([(origem || destino).lat, (origem || destino).lng], 15); return; }
   $("km").textContent = "Calculando rota…";
   rota = await calcularRota(origem, destino);
-  if (rota) camadas.push(L.polyline(rota.linha, { color: COR.laranja, weight: 5 }).addTo(mapa));
+  if (rota) camadas.push(L.polyline(rota.linha, ROTA).addTo(mapa));
   mapa.fitBounds(L.latLngBounds([[origem.lat, origem.lng], [destino.lat, destino.lng]]), { padding: [30, 30] });
   cotar();
 }
@@ -95,7 +90,7 @@ async function mostrarPedido(p) {
 function moverMoto(lat, lng) {
   if (!mapaPed) return;
   if (!motoMarker) {
-    motoMarker = L.marker([lat, lng], { icon: L.divIcon({ html: "🛵", className: "moto-icon", iconSize: [30, 30] }) }).addTo(mapaPed);
+    motoMarker = L.marker([lat, lng], { icon: icone.moto(), zIndexOffset: 1000 }).addTo(mapaPed);
   } else motoMarker.setLatLng([lat, lng]);
 }
 
@@ -114,6 +109,8 @@ async function atualizarStatus() {
     cancelado: "Pedido cancelado."
   };
   $("estado").textContent = textos[s.status] || s.status;
+  if (s.status === "aceito" && pedido.ultimoStatus && pedido.ultimoStatus !== "aceito") Alerta.tocarAceito();  // som quando o motoboy aceita
+  pedido.ultimoStatus = s.status;
   if (s.status === "aceito" || s.status === "coletado") {
     const { data: pos } = await db.from("posicoes").select("lat,lng").eq("pedido_id", pedido.id).maybeSingle();
     if (pos) moverMoto(pos.lat, pos.lng);

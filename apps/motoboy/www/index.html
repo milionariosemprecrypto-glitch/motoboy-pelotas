@@ -6,6 +6,7 @@
 <meta name="theme-color" content="#0b0b0b">
 <title>É-Já Motoboy</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
 <link rel="stylesheet" href="shared/style.css">
 </head>
 <body>
@@ -69,42 +70,54 @@
     </div>
 
     <div id="telaTrabalho" class="hidden">
-      <div class="seg">
-        <button id="segInicio" class="active" onclick="motoAba('inicio')">Início</button>
-        <button id="segGanhos" onclick="motoAba('ganhos')">Ganhos</button>
+      <div id="mapa" class="mapa-full"></div>
+      <button class="fab fab-tl" onclick="motoAba('ganhos')" aria-label="Menu"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+      <button id="pillGanhos" class="pill-ganhos" onclick="motoAba('ganhos')"><span>R$</span> <b id="pillValor">0,00</b></button>
+      <button class="fab fab-tr" onclick="centralizar()" aria-label="Centralizar"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/><circle cx="12" cy="12" r="7.5"/></svg></button>
+      <button class="fab fab-ganhos" onclick="motoAba('ganhos')" aria-label="Ganhos"><svg viewBox="0 0 24 24"><path d="M5 20V11M10 20V6M15 20v-8M20 20V9"/></svg></button>
+
+      <div id="motoBar" class="hidden">
+        <button id="disponivel" class="btn-redondo" onclick="alternarDisponibilidade()">FICAR<br>ONLINE</button>
+        <div id="rotuloOffline" class="rotulo-redondo hidden">FICAR OFFLINE</div>
       </div>
-      <div id="motoInicio">
-        <div id="mapa"></div>
-        <div id="motoStatus" class="status" style="margin-top:0">Você está offline.</div>
-        <div id="corrida" class="card hidden" style="margin-top:15px">
-          <span class="pill">Corrida em andamento</span>
-          <h2 id="corridaTitulo" style="margin-top:14px"></h2>
-          <div id="corridaInfo" class="small"></div>
-          <label for="codigoEntrega" id="codigoLabel" class="hidden">Código de confirmação do destinatário</label>
-          <input id="codigoEntrega" class="hidden" inputmode="numeric" maxlength="4" placeholder="4 dígitos">
-          <button class="secondary" onclick="abrirNavegacao()">Abrir navegação (Google Maps)</button>
-          <button id="corridaBtn" class="primary" onclick="avancar()"></button>
+
+      <div class="painel">
+        <div class="alca"></div>
+        <div class="painel-topo">
+          <button id="segInicio" class="icone-btn active" onclick="motoAba('inicio')" aria-label="Início"><svg viewBox="0 0 24 24"><path d="M4 7h10M4 17h10M18 7h2M18 17h2"/><circle cx="16" cy="7" r="2"/><circle cx="16" cy="17" r="2"/></svg></button>
+          <div id="motoStatusTitulo" class="painel-titulo">Você está offline</div>
+          <button id="segGanhos" class="icone-btn" onclick="motoAba('ganhos')" aria-label="Ganhos"><svg viewBox="0 0 24 24"><path d="M5 6h14M5 12h14M5 18h14"/></svg></button>
         </div>
-      </div>
-      <div id="motoGanhos" class="hidden">
-        <div class="card">
-          <h2>Ganhos de hoje</h2>
+        <div id="barraBusca" class="barra-busca hidden"><i></i></div>
+        <div id="motoInicio">
+          <div id="motoStatus" class="painel-sub">Fique online para receber corridas.</div>
+          <div id="corrida" class="hidden">
+            <span class="pill">Corrida em andamento</span>
+            <h2 id="corridaTitulo"></h2>
+            <div id="corridaInfo" class="painel-sub"></div>
+            <label for="codigoEntrega" id="codigoLabel" class="hidden">Código de confirmação do destinatário</label>
+            <input id="codigoEntrega" class="hidden" inputmode="numeric" maxlength="4" placeholder="4 dígitos">
+            <button class="secondary" onclick="abrirNavegacao()">Abrir navegação (Google Maps)</button>
+            <button id="corridaBtn" class="primary" onclick="avancar()"></button>
+          </div>
+        </div>
+        <div id="motoGanhos" class="hidden">
+          <div class="painel-sub">Ganhos de hoje</div>
           <div id="ganhosTotal" class="total">R$ 0,00</div>
-          <div id="ganhosResumo" class="small"></div>
+          <div id="ganhosResumo" class="painel-sub"></div>
           <div id="ganhosLista"></div>
-          <p class="small">Valor bruto das entregas.</p>
+          <button class="secondary" onclick="motoAba('inicio')">Voltar ao mapa</button>
+          <button class="link" onclick="db.auth.signOut()">Sair da conta</button>
         </div>
       </div>
     </div>
   </section>
 </main>
 
-<div id="motoBar" class="hidden">
-  <button id="disponivel" class="primary" onclick="alternarDisponibilidade()">Ficar online</button>
-</div>
 
-<div id="oferta" class="sheet hidden">
-  <div><span class="pill">Nova corrida</span></div>
+
+<div id="oferta" class="sheet sheet-oferta hidden">
+  <div class="oferta-topo"><span class="pill">Nova corrida</span><span class="pulso"></span></div>
   <div><h2 id="ofertaPreco"></h2></div>
   <div id="ofertaResumo" class="small"></div>
   <div class="tempo"><div id="barraTempo"></div></div>
@@ -113,11 +126,15 @@
 </div>
 <footer>É-JÁ · PEDIU. PARTIU. · Pelotas-RS</footer>
 <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script src="https://unpkg.com/@maplibre/maplibre-gl-leaflet@0.0.22/leaflet-maplibre-gl.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="shared/config.js"></script>
 <script src="shared/auth.js"></script>
 <script src="shared/geo.js"></script>
 <script src="shared/push.js"></script>
+<script src="shared/mapa.js"></script>
+<script src="shared/alerta.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

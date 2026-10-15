@@ -77,6 +77,7 @@ try:
 
         # 4. Motoboy aprovado fica online
         moto.reload(); expect(moto.locator("#telaTrabalho")).to_be_visible(timeout=15000)
+        shot(moto, "motoboy-03a-offline")
         moto.click("#disponivel"); expect(moto.locator("#motoStatus")).to_contain_text("online"); passo("motoboy aprovado fica online")
         shot(moto, "motoboy-03-online")
 
@@ -98,7 +99,7 @@ try:
         expect(moto.locator("#corrida")).to_be_visible(timeout=15000)
         expect(cli.locator("#estado")).to_contain_text("aceitou", timeout=20000); passo("cliente vê aceite (tempo real)")
         codigo = re.search(r"(\d{4})", cli.inner_text("#estado")).group(1)
-        expect(cli.locator("#mapaPedido .leaflet-marker-icon")).to_be_visible(timeout=25000); passo("cliente vê o motoboy no mapa (rastreio ao vivo)")
+        expect(cli.locator("#mapaPedido .pin-moto")).to_be_visible(timeout=25000); passo("cliente vê o motoboy no mapa (rastreio ao vivo)")
         cli.locator("#pedido").scroll_into_view_if_needed(); shot(cli, "cliente-03-rastreio"); shot(moto, "motoboy-05-corrida")
         cm.set_geolocation({"latitude": -31.7700, "longitude": -52.3420}); moto.wait_for_timeout(12000)
         n = sql(f"select count(*) c from posicoes po join pedidos p on p.id=po.pedido_id where p.cliente_id='{users['cliente'][0]}' and abs(po.lat+31.77)<0.0005")[0]["c"]

@@ -25,7 +25,8 @@ async function googleToken(sa: any) {
   return cache.token;
 }
 
-async function enviar(sa: any, tokens: string[], title: string, body: string, data: Record<string, string>) {
+async function enviar(sa: any, tokens: string[], title: string, body: string, data: Record<string, string>,
+  canal = "eja_status", som = "eja_aceito") {
   if (!tokens.length) return 0;
   const access = await googleToken(sa);
   let ok = 0;
@@ -33,7 +34,7 @@ async function enviar(sa: any, tokens: string[], title: string, body: string, da
     const r = await fetch(`https://fcm.googleapis.com/v1/projects/${sa.project_id}/messages:send`, {
       method: "POST", headers: { Authorization: `Bearer ${access}`, "Content-Type": "application/json" },
       body: JSON.stringify({ message: { token, notification: { title, body }, data,
-        android: { priority: "high", notification: { channel_id: "eja", sound: "default" } } } }),
+        android: { priority: "high", ttl: "30s", notification: { channel_id: canal, sound: som, default_vibrate_timings: true } } } }),
     });
     if (r.ok) ok++;
     else if (r.status === 404 || r.status === 400) await db.from("device_tokens").delete().eq("token", token); // token velho
@@ -69,7 +70,7 @@ Deno.serve(async (req) => {
     if (perto.length) {
       const { data: t } = await db.from("device_tokens").select("token").eq("app", "motoboy").in("user_id", perto);
       enviados = await enviar(sa, (t ?? []).map((x) => x.token), "Nova corrida: R$ " + Number(p.preco).toFixed(2).replace(".", ","),
-        p.retirada + " → " + p.entrega, { pedido_id: p.id, tipo: "nova_corrida" });
+        p.retirada + " → " + p.entrega, { pedido_id: p.id, tipo: "nova_corrida" }, "eja_corrida", "eja_corrida");
     }
   } else if (msgs[status]) {
     const { data: t } = await db.from("device_tokens").select("token").eq("app", "cliente").eq("user_id", p.cliente_id);

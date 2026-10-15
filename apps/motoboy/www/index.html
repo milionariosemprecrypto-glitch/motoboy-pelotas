@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#101b2d">
+<title>É-Já Motoboy</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="shared/style.css">
+</head>
+<body>
+<header>
+  <div class="brand">É-<span>JÁ</span> <span style="color:#c0cada;font-weight:400">MOTOBOY</span></div>
+  <button id="sair" class="hidden">Sair</button>
+</header>
+<main>
+  <section id="telaAuth" class="hidden">
+    <div class="card">
+      <h2 id="authTitulo">Entrar</h2>
+      <form id="authForm">
+        <div id="campoNome" class="hidden">
+          <label for="authNome">Seu nome</label>
+          <input id="authNome" maxlength="80" placeholder="Nome e sobrenome">
+        </div>
+        <label for="authEmail">E-mail</label>
+        <input id="authEmail" type="email" required autocomplete="email">
+        <label for="authSenha">Senha</label>
+        <input id="authSenha" type="password" required minlength="6" autocomplete="current-password">
+        <button id="authBtn" class="primary" type="submit">Entrar</button>
+      </form>
+      <button id="authLink" class="link" type="button">Receber link de acesso por e-mail</button>
+      <button id="authTroca" class="link" type="button"></button>
+      <div id="authMsg" class="erro"></div>
+    </div>
+  </section>
+  <section id="telaApp" class="hidden">
+    <div id="telaCadastro" class="hidden">
+      <h1>Cadastro de motoboy</h1>
+      <p class="intro">Envie seus dados e documentos. Nossa equipe vai conferir e aprovar seu cadastro.</p>
+      <div class="card">
+        <form id="cadForm">
+          <label for="cNome">Nome completo</label><input id="cNome" required maxlength="80">
+          <label for="cTel">Celular (WhatsApp)</label><input id="cTel" required inputmode="tel" maxlength="20" placeholder="(53) 9 9999-9999">
+          <label for="cCpf">CPF</label><input id="cCpf" required inputmode="numeric" maxlength="14" placeholder="Somente números">
+          <label for="cCnh">Número da CNH</label><input id="cCnh" required maxlength="20">
+          <label for="cPlaca">Placa da moto</label><input id="cPlaca" required maxlength="10" placeholder="ABC1D23">
+          <label for="cModelo">Modelo da moto</label><input id="cModelo" required maxlength="60" placeholder="Ex.: Honda CG 160">
+          <label for="cFoto">Sua foto (rosto)</label><input id="cFoto" type="file" accept="image/*" capture="user" required>
+          <label for="cDoc">Foto da CNH</label><input id="cDoc" type="file" accept="image/*,application/pdf" required>
+          <button id="cadBtn" class="primary" type="submit">Enviar cadastro</button>
+          <div id="cadMsg" class="erro"></div>
+        </form>
+      </div>
+    </div>
+
+    <div id="telaAguardando" class="card hidden">
+      <span class="pill">Aguardando aprovação</span>
+      <h2 style="margin-top:14px">Recebemos seu cadastro!</h2>
+      <p class="small">Estamos conferindo seus documentos. Assim que for aprovado, você poderá ficar online e aceitar corridas.</p>
+      <button class="secondary" onclick="carregar()">Verificar novamente</button>
+      <button class="secondary" onclick="show('telaAguardando',false);show('telaCadastro',true)">Corrigir dados</button>
+    </div>
+
+    <div id="telaBloqueado" class="card hidden">
+      <h2>Cadastro bloqueado</h2>
+      <p class="small">Entre em contato com o suporte do É-Já.</p>
+    </div>
+
+    <div id="telaTrabalho" class="hidden">
+      <div class="seg">
+        <button id="segInicio" class="active" onclick="motoAba('inicio')">Início</button>
+        <button id="segGanhos" onclick="motoAba('ganhos')">Ganhos</button>
+      </div>
+      <div id="motoInicio">
+        <div id="mapa"></div>
+        <div id="motoStatus" class="status" style="margin-top:0">Você está offline.</div>
+        <div id="corrida" class="card hidden" style="margin-top:15px">
+          <span class="pill">Corrida em andamento</span>
+          <h2 id="corridaTitulo" style="margin-top:14px"></h2>
+          <div id="corridaInfo" class="small"></div>
+          <label for="codigoEntrega" id="codigoLabel" class="hidden">Código de confirmação do destinatário</label>
+          <input id="codigoEntrega" class="hidden" inputmode="numeric" maxlength="4" placeholder="4 dígitos">
+          <button id="corridaBtn" class="primary" onclick="avancar()"></button>
+        </div>
+      </div>
+      <div id="motoGanhos" class="hidden">
+        <div class="card">
+          <h2>Ganhos de hoje</h2>
+          <div id="ganhosTotal" class="total">R$ 0,00</div>
+          <div id="ganhosResumo" class="small"></div>
+          <div id="ganhosLista"></div>
+          <p class="small">Valor bruto das entregas.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<div id="motoBar" class="hidden">
+  <button id="disponivel" class="primary" onclick="alternarDisponibilidade()">Ficar online</button>
+</div>
+
+<div id="oferta" class="sheet hidden">
+  <div><span class="pill">Nova corrida</span></div>
+  <div><h2 id="ofertaPreco"></h2></div>
+  <div id="ofertaResumo" class="small"></div>
+  <div class="tempo"><div id="barraTempo"></div></div>
+  <button class="primary" onclick="aceitarCorrida()">Aceitar corrida</button>
+  <button class="secondary" onclick="recusarCorrida()">Recusar</button>
+</div>
+<footer>É-Já · Pelotas-RS · Versão de testes</footer>
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="shared/config.js"></script>
+<script src="shared/auth.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

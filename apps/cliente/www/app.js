@@ -11,10 +11,10 @@ async function carregar() {
   if (data && data[0]) mostrarPedido(data[0]);
 }
 
-const ponto = (ll, cor) => L.circleMarker(ll, { radius: 9, color: "#fff", weight: 3, fillColor: cor, fillOpacity: 1 });
+const ponto = (ll, cor) => L.circleMarker(ll, { radius: 9, color: "#0b0b0b", weight: 3, fillColor: cor, fillOpacity: 1 });
 function novoMapa(id) {
   const m = L.map(id).setView(PELOTAS, 13);
-  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "© OpenStreetMap" }).addTo(m);
+  L.tileLayer(TILES, { maxZoom: 19, attribution: TILES_ATTR }).addTo(m);
   setTimeout(() => m.invalidateSize(), 100);
   return m;
 }
@@ -28,12 +28,12 @@ function iniciarMapa() {
 
 async function desenhar() {
   camadas.forEach(c => c.remove()); camadas = []; rota = null;
-  if (origem) camadas.push(ponto([origem.lat, origem.lng], "#087e67").addTo(mapa));
-  if (destino) camadas.push(ponto([destino.lat, destino.lng], "#b8372a").addTo(mapa));
+  if (origem) camadas.push(ponto([origem.lat, origem.lng], COR.laranja).addTo(mapa));
+  if (destino) camadas.push(ponto([destino.lat, destino.lng], COR.branco).addTo(mapa));
   if (!(origem && destino)) { if (origem || destino) mapa.setView([(origem || destino).lat, (origem || destino).lng], 15); return; }
   $("km").textContent = "Calculando rota…";
   rota = await calcularRota(origem, destino);
-  if (rota) camadas.push(L.polyline(rota.linha, { color: "#087e67", weight: 5 }).addTo(mapa));
+  if (rota) camadas.push(L.polyline(rota.linha, { color: COR.laranja, weight: 5 }).addTo(mapa));
   mapa.fitBounds(L.latLngBounds([[origem.lat, origem.lng], [destino.lat, destino.lng]]), { padding: [30, 30] });
   cotar();
 }
@@ -80,7 +80,7 @@ async function mostrarPedido(p) {
     Object.assign(p, data);
   }
   camadasPed.forEach(c => c.remove());
-  camadasPed = [ponto([p.ret_lat, p.ret_lng], "#087e67").addTo(mapaPed), ponto([p.ent_lat, p.ent_lng], "#b8372a").addTo(mapaPed)];
+  camadasPed = [ponto([p.ret_lat, p.ret_lng], COR.laranja).addTo(mapaPed), ponto([p.ent_lat, p.ent_lng], COR.branco).addTo(mapaPed)];
   mapaPed.fitBounds(L.latLngBounds([[p.ret_lat, p.ret_lng], [p.ent_lat, p.ent_lng]]), { padding: [30, 30] });
   atualizarStatus();
   // Tempo real: status do pedido + posição do motoboy (RLS garante que só recebemos os nossos).
@@ -95,7 +95,7 @@ async function mostrarPedido(p) {
 function moverMoto(lat, lng) {
   if (!mapaPed) return;
   if (!motoMarker) {
-    motoMarker = L.marker([lat, lng], { icon: L.divIcon({ html: "🛵", className: "", iconSize: [30, 30] }) }).addTo(mapaPed);
+    motoMarker = L.marker([lat, lng], { icon: L.divIcon({ html: "🛵", className: "moto-icon", iconSize: [30, 30] }) }).addTo(mapaPed);
   } else motoMarker.setLatLng([lat, lng]);
 }
 

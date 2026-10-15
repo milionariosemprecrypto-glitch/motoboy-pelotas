@@ -18,3 +18,8 @@ function erroMsg(e) {
 }
 // Mude para true DEPOIS de colocar o google-services.json do Firebase em android/app/ (senão o app pode fechar).
 const FIREBASE_PRONTO = false;
+// Mapa: tiles padrão do OpenStreetMap, escurecidos por CSS (style.css .leaflet-tile-pane) — grátis, sem chave.
+// Respeite a política de uso do OSM (https://operations.osmfoundation.org/policies/tiles/); com volume alto, use um provedor pago.
+const TILES = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
+const TILES_ATTR = '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>';
+const COR = { laranja: "#ff6a00", branco: "#f5f5f5", verde: "#2ecc71" };

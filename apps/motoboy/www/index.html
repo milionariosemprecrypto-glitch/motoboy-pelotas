@@ -3,18 +3,19 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<meta name="theme-color" content="#101b2d">
+<meta name="theme-color" content="#0b0b0b">
 <title>É-Já Motoboy</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
 <link rel="stylesheet" href="shared/style.css">
 </head>
 <body>
 <header>
-  <div class="brand">É-<span>JÁ</span> <span style="color:#c0cada;font-weight:400">MOTOBOY</span></div>
+  <div class="brand"><img src="shared/img/eja-wordmark.svg" alt="É-Já"><span class="tag">MOTOBOY</span></div>
   <button id="sair" class="hidden">Sair</button>
 </header>
 <main>
   <section id="telaAuth" class="hidden">
+    <div class="hero"><img src="shared/img/eja-logo.svg" alt="É-Já — Pediu. Partiu."></div>
     <div class="card">
       <h2 id="authTitulo">Entrar</h2>
       <form id="authForm">
@@ -36,7 +37,7 @@
   </section>
   <section id="telaApp" class="hidden">
     <div id="telaCadastro" class="hidden">
-      <h1>Cadastro de motoboy</h1>
+      <h1>Cadastro de <em>motoboy</em></h1>
       <p class="intro">Envie seus dados e documentos. Nossa equipe vai conferir e aprovar seu cadastro.</p>
       <div class="card">
         <form id="cadForm">
@@ -110,7 +111,7 @@
   <button class="primary" onclick="aceitarCorrida()">Aceitar corrida</button>
   <button class="secondary" onclick="recusarCorrida()">Recusar</button>
 </div>
-<footer>É-Já · Pelotas-RS · Versão de testes</footer>
+<footer>É-JÁ · PEDIU. PARTIU. · Pelotas-RS</footer>
 <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="shared/config.js"></script>

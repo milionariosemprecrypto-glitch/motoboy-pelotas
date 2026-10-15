@@ -8,16 +8,17 @@
 main { max-width:1100px; }
 table { width:100%; border-collapse:collapse; font-size:13px; }
 th, td { text-align:left; padding:8px 6px; border-top:1px solid var(--border); vertical-align:top; }
-td button { padding:6px 10px; border-radius:8px; border:1px solid var(--primary); background:white; color:var(--primary); font-weight:700; cursor:pointer; margin:2px; }
-td button.bloq { border-color:#b8372a; color:#b8372a; }
-.st-pendente { color:#9a6b00; font-weight:700; } .st-aprovado { color:#087e67; font-weight:700; } .st-bloqueado { color:#b8372a; font-weight:700; }
+td button { padding:6px 10px; border-radius:8px; border:1px solid var(--primary); background:transparent; font-family:inherit; color:var(--primary); font-weight:700; cursor:pointer; margin:2px; }
+td button.bloq { border-color:#ff3b30; color:#ff3b30; }
+.st-pendente { color:#ff8a1f; font-weight:700; } .st-aprovado { color:#2ecc71; font-weight:700; } .st-bloqueado { color:#ff3b30; font-weight:700; }
 .wrap { overflow-x:auto; }
 </style>
 </head>
 <body>
-<header><div class="brand">É-<span>JÁ</span> <span style="color:#c0cada;font-weight:400">ADMIN</span></div><button id="sair" class="hidden">Sair</button></header>
+<header><div class="brand"><img src="../shared/img/eja-wordmark.svg" alt="É-Já"><span class="tag">ADMIN</span></div><button id="sair" class="hidden">Sair</button></header>
 <main>
   <section id="telaAuth" class="hidden">
+    <div class="hero"><img src="../shared/img/eja-logo.svg" alt="É-Já — Pediu. Partiu."></div>
     <div class="card" style="max-width:420px;margin:auto">
       <h2 id="authTitulo">Entrar</h2>
       <form id="authForm">

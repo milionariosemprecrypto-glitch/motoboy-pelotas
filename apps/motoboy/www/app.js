@@ -69,14 +69,14 @@ function motoAba(a) {
 function iniciarMapa() {
   if (mapa) return;
   mapa = L.map("mapa", { zoomControl: false }).setView(PELOTAS, 13);
-  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "© OpenStreetMap" }).addTo(mapa);
+  L.tileLayer(TILES, { maxZoom: 19, attribution: TILES_ATTR }).addTo(mapa);
   setTimeout(() => mapa.invalidateSize(), 100);
   if (!navigator.geolocation) return;
   navigator.geolocation.watchPosition(p => {
     const ll = [p.coords.latitude, p.coords.longitude];
     ultimaPos = ll;
     if (!marcador) {
-      marcador = L.circleMarker(ll, { radius: 9, color: "#fff", weight: 3, fillColor: "#087e67", fillOpacity: 1 }).addTo(mapa);
+      marcador = L.circleMarker(ll, { radius: 9, color: "#0b0b0b", weight: 3, fillColor: COR.laranja, fillOpacity: 1 }).addTo(mapa);
       mapa.setView(ll, 15);
     } else marcador.setLatLng(ll);
   }, () => {}, { enableHighAccuracy: true });
@@ -163,11 +163,11 @@ async function desenharCorrida(c) {
   camadasCorrida.forEach(x => x.remove()); camadasCorrida = [];
   if (!c || c.ret_lat == null) return;
   const alvo = c.status === "aceito" ? { lat: c.ret_lat, lng: c.ret_lng } : { lat: c.ent_lat, lng: c.ent_lng };
-  camadasCorrida.push(L.circleMarker([alvo.lat, alvo.lng], { radius: 10, color: "#fff", weight: 3,
-    fillColor: c.status === "aceito" ? "#087e67" : "#b8372a", fillOpacity: 1 }).addTo(mapa));
+  camadasCorrida.push(L.circleMarker([alvo.lat, alvo.lng], { radius: 10, color: "#0b0b0b", weight: 3,
+    fillColor: c.status === "aceito" ? COR.laranja : COR.branco, fillOpacity: 1 }).addTo(mapa));
   if (ultimaPos) {
     const r = await calcularRota({ lat: ultimaPos[0], lng: ultimaPos[1] }, alvo);
-    if (r) { camadasCorrida.push(L.polyline(r.linha, { color: "#087e67", weight: 5 }).addTo(mapa)); mapa.fitBounds(r.linha, { padding: [30, 30] }); }
+    if (r) { camadasCorrida.push(L.polyline(r.linha, { color: COR.laranja, weight: 5 }).addTo(mapa)); mapa.fitBounds(r.linha, { padding: [30, 30] }); }
   }
 }
 

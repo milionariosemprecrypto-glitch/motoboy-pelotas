@@ -35,7 +35,11 @@ try:
     with sync_playwright() as p:
         b = p.chromium.launch()
         def ctx(): return b.new_context(geolocation={"latitude": -31.7650, "longitude": -52.3380},
-                                        permissions=["geolocation"], locale="pt-BR")
+                                        permissions=["geolocation"], locale="pt-BR",
+                                        viewport={"width": 360, "height": 640}, device_scale_factor=3)  # 1080x1920
+        SHOTS = os.environ.get("SHOTS")   # se definido, salva capturas para a Play Store nessa pasta
+        def shot(pg, nome):
+            if SHOTS: os.makedirs(SHOTS, exist_ok=True); pg.wait_for_timeout(1200); pg.screenshot(path=f"{SHOTS}/{nome}.png")
         def login(pg, app, nome):
             pg.goto(f"http://localhost:8090/{app}")
             pg.fill("#authEmail", users[nome][1]); pg.fill("#authSenha", senha); pg.click("#authBtn")
@@ -44,8 +48,11 @@ try:
         for pg in (moto, cli, adm): pg.on("dialog", lambda d: d.accept())
 
         # 1. Motoboy se cadastra com documentos
+        moto.goto("http://localhost:8090/motoboy/www/"); expect(moto.locator("#telaAuth")).to_be_visible(timeout=15000); shot(moto, "motoboy-01-login")
+        cli.goto("http://localhost:8090/cliente/www/"); expect(cli.locator("#telaAuth")).to_be_visible(timeout=15000); shot(cli, "cliente-01-login")
         login(moto, "motoboy/www/", "moto")
         expect(moto.locator("#telaCadastro")).to_be_visible(timeout=15000)
+        shot(moto, "motoboy-02-cadastro")
         moto.fill("#cNome", "E2E Moto"); moto.fill("#cTel", "53999990000"); moto.fill("#cCpf", "52998224725")
         moto.fill("#cCnh", "12345678900"); moto.fill("#cPlaca", "IXA1B23"); moto.fill("#cModelo", "Honda CG 160")
         moto.set_input_files("#cFoto", "/tmp/foto.png"); moto.set_input_files("#cDoc", "/tmp/foto.png")
@@ -59,6 +66,7 @@ try:
         expect(row).to_be_visible(timeout=15000); passo("admin vê motoboy pendente")
         with adm.expect_popup() as pop: row.get_by_role("button", name="CNH").click()
         assert "token=" in pop.value.url; pop.value.close(); passo("admin abre documento (URL assinada do bucket privado)")
+        shot(adm, "admin-motoboys")
         row.get_by_role("button", name="Aprovar").click()
         expect(adm.locator("#tbM tr", has_text="E2E Moto").locator(".st-aprovado")).to_be_visible(timeout=10000); passo("admin aprova motoboy")
 
@@ -70,6 +78,7 @@ try:
         # 4. Motoboy aprovado fica online
         moto.reload(); expect(moto.locator("#telaTrabalho")).to_be_visible(timeout=15000)
         moto.click("#disponivel"); expect(moto.locator("#motoStatus")).to_contain_text("online"); passo("motoboy aprovado fica online")
+        shot(moto, "motoboy-03-online")
 
         # 5. Cliente pede com autocomplete + rota
         login(cli, "cliente/www/", "cliente")
@@ -77,18 +86,20 @@ try:
         cli.fill("#origem", "Rua Quinze de Novembro"); cli.locator("#sugOrigem .sugestao").first.click(timeout=20000)
         cli.fill("#destino", "Avenida Bento Gonçalves"); cli.locator("#sugDestino .sugestao").first.click(timeout=20000)
         expect(cli.locator("#valor")).to_contain_text("R$", timeout=20000)
+        cli.evaluate("window.scrollTo(0, 120)"); shot(cli, "cliente-02-cotacao")
         print("   cotação:", cli.inner_text("#valor"), "|", cli.inner_text("#km")); passo("autocomplete Pelotas + rota + preço do servidor")
         cli.click("#deliveryForm button[type=submit]")
         expect(cli.locator("#pedido")).to_be_visible(timeout=15000); passo("cliente cria pedido")
 
         # 6. Motoboy recebe e aceita
         expect(moto.locator("#oferta")).to_be_visible(timeout=20000); passo("motoboy recebe oferta")
+        shot(moto, "motoboy-04-oferta")
         moto.click("#oferta button.primary")
         expect(moto.locator("#corrida")).to_be_visible(timeout=15000)
         expect(cli.locator("#estado")).to_contain_text("aceitou", timeout=20000); passo("cliente vê aceite (tempo real)")
         codigo = re.search(r"(\d{4})", cli.inner_text("#estado")).group(1)
-        moto.wait_for_timeout(12000)
         expect(cli.locator("#mapaPedido .leaflet-marker-icon")).to_be_visible(timeout=25000); passo("cliente vê o motoboy no mapa (rastreio ao vivo)")
+        cli.locator("#pedido").scroll_into_view_if_needed(); shot(cli, "cliente-03-rastreio"); shot(moto, "motoboy-05-corrida")
         cm.set_geolocation({"latitude": -31.7700, "longitude": -52.3420}); moto.wait_for_timeout(12000)
         n = sql(f"select count(*) c from posicoes po join pedidos p on p.id=po.pedido_id where p.cliente_id='{users['cliente'][0]}' and abs(po.lat+31.77)<0.0005")[0]["c"]
         assert n == 1, "posição não atualizou"; passo("posição do motoboy atualiza (~10 s)")
@@ -99,11 +110,14 @@ try:
         expect(moto.locator("#corrida")).to_be_visible(); passo("código errado recusado")
         moto.fill("#codigoEntrega", codigo); moto.click("#corridaBtn")
         expect(cli.locator("#estado")).to_contain_text("concluída", timeout=20000); passo("entrega concluída com código")
+        shot(cli, "cliente-04-concluida")
         moto.click("#segGanhos"); expect(moto.locator("#ganhosLista .corrida-item")).to_have_count(1, timeout=10000); passo("ganhos do motoboy")
+        shot(moto, "motoboy-06-ganhos")
 
         # 8. Admin vê pedido
         adm.click("#abaP"); adm.click("#secP button.link")
         expect(adm.locator("#tbP tr", has_text="entregue").first).to_be_visible(timeout=10000); passo("admin vê pedidos")
+        shot(adm, "admin-pedidos")
         b.close()
     print(f"\nTODOS OS {len(ok)} PASSOS OK")
 finally:

@@ -16,3 +16,5 @@ function erroMsg(e) {
   if (m.includes("Email not confirmed")) return "Confirme seu e-mail pelo link que enviamos.";
   return m;
 }
+// Mude para true DEPOIS de colocar o google-services.json do Firebase em android/app/ (senão o app pode fechar).
+const FIREBASE_PRONTO = false;

@@ -36,7 +36,7 @@ function iniciarAuth({ role, aoEntrar }) {
   $("sair").onclick = () => db.auth.signOut();
   trocar("entrar");
 
-  let atual = null;
+  let atual; // undefined: força mostrar a tela certa na primeira vez
   db.auth.onAuthStateChange((_ev, session) => {
     const uid = session ? session.user.id : null;
     if (uid === atual) return;

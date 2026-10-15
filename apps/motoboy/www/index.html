@@ -31,6 +31,7 @@
       <button id="authLink" class="link" type="button">Receber link de acesso por e-mail</button>
       <button id="authTroca" class="link" type="button"></button>
       <div id="authMsg" class="erro"></div>
+      <p class="legal">Ao continuar você aceita os <a href="https://milionariosemprecrypto-glitch.github.io/motoboy-pelotas/termos.html" target="_blank">Termos de Uso</a> e a <a href="https://milionariosemprecrypto-glitch.github.io/motoboy-pelotas/privacidade.html" target="_blank">Política de Privacidade</a>.</p>
     </div>
   </section>
   <section id="telaApp" class="hidden">
@@ -80,6 +81,7 @@
           <div id="corridaInfo" class="small"></div>
           <label for="codigoEntrega" id="codigoLabel" class="hidden">Código de confirmação do destinatário</label>
           <input id="codigoEntrega" class="hidden" inputmode="numeric" maxlength="4" placeholder="4 dígitos">
+          <button class="secondary" onclick="abrirNavegacao()">Abrir navegação (Google Maps)</button>
           <button id="corridaBtn" class="primary" onclick="avancar()"></button>
         </div>
       </div>
@@ -113,6 +115,8 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="shared/config.js"></script>
 <script src="shared/auth.js"></script>
+<script src="shared/geo.js"></script>
+<script src="shared/push.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

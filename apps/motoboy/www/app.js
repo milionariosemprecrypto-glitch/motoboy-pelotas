@@ -9,12 +9,15 @@ iniciarAuth({ role: "motoboy", aoEntrar: u => { usuario = u; carregar(); } });
 // ---------- cadastro / aprovação ----------
 async function carregar() {
   ["telaCadastro", "telaAguardando", "telaBloqueado", "telaTrabalho"].forEach(t => show(t, false));
-  const { data: m } = await db.from("motoboys").select("*").maybeSingle();
-  const { data: p } = await db.from("profiles").select("nome, telefone").maybeSingle();
+  const { data: m } = await db.from("motoboys").select("*").eq("id", usuario.id).maybeSingle();
+  const { data: p } = await db.from("profiles").select("nome, telefone").eq("id", usuario.id).maybeSingle();
   if (!m) { $("telaBloqueado").querySelector("p").textContent = "Esta conta é de cliente. Use o app É-Já."; show("telaBloqueado", true); return; }
   if (p) { $("cNome").value = p.nome || ""; $("cTel").value = p.telefone || ""; }
   if (m.status === "bloqueado") show("telaBloqueado", true);
-  else if (m.status === "aprovado") { aprovado = true; show("telaTrabalho", true); iniciarMapa(); sincronizar(); }
+  else if (m.status === "aprovado") {
+    aprovado = true; show("telaTrabalho", true); iniciarMapa(); sincronizar();
+    iniciarPush("motoboy", d => { if (d.tipo === "nova_corrida" && !disponivel) alternarDisponibilidade(); else buscarOfertas(); });
+  }
   else if (!m.enviado_em) show("telaCadastro", true);
   else show("telaAguardando", true);
   atualizarBarra();
@@ -79,18 +82,37 @@ function iniciarMapa() {
   }, () => {}, { enableHighAccuracy: true });
 }
 
-// Envia a localização ao servidor a cada 15 s enquanto online (base para o rastreio ao vivo da Fase 2).
-setInterval(() => {
-  if (aprovado && ultimaPos && (disponivel || ocupado))
-    db.rpc("atualizar_local", { p_lat: ultimaPos[0], p_lng: ultimaPos[1], p_online: true });
-}, 15000);
+// Envia a localização: a cada 10 s em corrida (rastreio ao vivo do cliente), 30 s quando só online.
+let ultimoEnvio = 0;
+function enviarLocal(forcar) {
+  if (!aprovado || !ultimaPos || !(disponivel || ocupado)) return;
+  const intervalo = ocupado ? 10000 : 30000;
+  if (!forcar && Date.now() - ultimoEnvio < intervalo) return;
+  ultimoEnvio = Date.now();
+  db.rpc("atualizar_local", { p_lat: ultimaPos[0], p_lng: ultimaPos[1], p_online: disponivel || ocupado }).then(() => {}); // .then() dispara a chamada (o supabase-js só envia quando "aguardado")
+}
+setInterval(enviarLocal, 2000);
+
+// No Android, usa serviço em primeiro plano (notificação fixa) para continuar enviando com a tela apagada.
+let watcherBg = null;
+async function localizacaoSegundoPlano(ligar) {
+  const C = window.Capacitor, BG = C && C.isNativePlatform && C.isNativePlatform() && C.Plugins.BackgroundGeolocation;
+  if (!BG) return;
+  if (ligar && !watcherBg) {
+    watcherBg = await BG.addWatcher({
+      backgroundTitle: "É-Já Motoboy", backgroundMessage: "Compartilhando sua localização durante o trabalho",
+      requestPermissions: true, stale: false, distanceFilter: 15
+    }, (loc, err) => { if (loc) { ultimaPos = [loc.latitude, loc.longitude]; marcador && marcador.setLatLng(ultimaPos); } });
+  } else if (!ligar && watcherBg) { await BG.removeWatcher({ id: watcherBg }); watcherBg = null; }
+}
 
 function alternarDisponibilidade() {
   disponivel = !disponivel;
   $("disponivel").textContent = disponivel ? "Ficar offline" : "Ficar online";
   $("disponivel").classList.toggle("off", disponivel);
   $("motoStatus").textContent = disponivel ? "Você está online. Procurando corridas…" : "Você está offline.";
-  if (ultimaPos) db.rpc("atualizar_local", { p_lat: ultimaPos[0], p_lng: ultimaPos[1], p_online: disponivel });
+  localizacaoSegundoPlano(disponivel || ocupado);
+  if (ultimaPos) db.rpc("atualizar_local", { p_lat: ultimaPos[0], p_lng: ultimaPos[1], p_online: disponivel }).then(() => {});
   clearInterval(timerMoto);
   if (disponivel) { buscarOfertas(); timerMoto = setInterval(buscarOfertas, 4000); }
   else esconderOferta();
@@ -126,7 +148,7 @@ async function aceitarCorrida() {
   const { data, error } = await db.rpc("aceitar_pedido", { p_id: o.id });
   if (error) { alert("Não foi possível aceitar: " + erroMsg(error)); return; }
   esconderOferta();
-  if (data) { corrida = { ...o, status: "aceito" }; ocupado = true; mostrarCorrida(); }
+  if (data) { ocupado = true; await sincronizar(); }
   else { recusados.add(o.id); $("motoStatus").textContent = "Outro motoboy aceitou antes de você."; buscarOfertas(); }
 }
 
@@ -136,8 +158,28 @@ function recusarCorrida() {
   buscarOfertas();
 }
 
+let camadasCorrida = [];
+async function desenharCorrida(c) {
+  camadasCorrida.forEach(x => x.remove()); camadasCorrida = [];
+  if (!c || c.ret_lat == null) return;
+  const alvo = c.status === "aceito" ? { lat: c.ret_lat, lng: c.ret_lng } : { lat: c.ent_lat, lng: c.ent_lng };
+  camadasCorrida.push(L.circleMarker([alvo.lat, alvo.lng], { radius: 10, color: "#fff", weight: 3,
+    fillColor: c.status === "aceito" ? "#087e67" : "#b8372a", fillOpacity: 1 }).addTo(mapa));
+  if (ultimaPos) {
+    const r = await calcularRota({ lat: ultimaPos[0], lng: ultimaPos[1] }, alvo);
+    if (r) { camadasCorrida.push(L.polyline(r.linha, { color: "#087e67", weight: 5 }).addTo(mapa)); mapa.fitBounds(r.linha, { padding: [30, 30] }); }
+  }
+}
+
+function abrirNavegacao() {
+  const c = corrida; if (!c) return;
+  const [lat, lng] = c.status === "aceito" ? [c.ret_lat, c.ret_lng] : [c.ent_lat, c.ent_lng];
+  window.open("https://www.google.com/maps/dir/?api=1&travelmode=driving&destination=" + lat + "," + lng, "_blank");
+}
+
 function mostrarCorrida() {
   const c = corrida, coletando = c.status === "aceito";
+  desenharCorrida(c); localizacaoSegundoPlano(true); enviarLocal(true);
   show("corrida", true);
   $("corridaTitulo").textContent = coletando ? "Vá retirar o item" : "Leve até o destino";
   $("corridaInfo").textContent = (coletando ? "Retirada: " + c.retirada : "Entrega: " + c.entrega) +
@@ -149,7 +191,8 @@ function mostrarCorrida() {
 }
 
 function encerrarCorrida(msg) {
-  corrida = null; ocupado = false;
+  corrida = null; ocupado = false; desenharCorrida(null);
+  if (!disponivel) localizacaoSegundoPlano(false);
   show("corrida", false);
   $("codigoEntrega").value = "";
   $("motoStatus").textContent = msg;
@@ -174,7 +217,7 @@ async function sincronizar() {
   const { data, error } = await db.rpc("minha_corrida");
   if (error) return;
   const c = data && data[0];
-  if (c) { corrida = c; ocupado = true; mostrarCorrida(); }
+  if (c) { const mudou = !corrida || corrida.id !== c.id || corrida.status !== c.status; corrida = c; ocupado = true; if (mudou) mostrarCorrida(); }
   else if (corrida) encerrarCorrida("O cliente cancelou a corrida.");
 }
 setInterval(sincronizar, 5000);

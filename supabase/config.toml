@@ -1,0 +1,3 @@
+project_id = "waalgvcywtfnrrpkrhti"
+[functions.notificar]
+verify_jwt = false   # chamada pelo próprio banco; protegida pelo header x-eja-secret

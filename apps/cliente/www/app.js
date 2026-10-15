@@ -1,75 +1,102 @@
-// É-Já (cliente): pedir entrega e acompanhar em tempo real.
-let mapa = null, pontos = [], marcadores = [], pedido = null, canal = null;
+// É-Já (cliente): pedir entrega, ver preço, acompanhar o motoboy ao vivo.
+let mapa = null, mapaPed = null, origem = null, destino = null, rota = null;
+let camadas = [], pedido = null, canal = null, motoMarker = null, camadasPed = [];
 
 iniciarAuth({ role: "cliente", aoEntrar: carregar });
 
 async function carregar() {
   iniciarMapa();
+  iniciarPush("cliente", () => atualizarStatus());
   const { data } = await db.rpc("meu_pedido_ativo");
   if (data && data[0]) mostrarPedido(data[0]);
 }
 
+const ponto = (ll, cor) => L.circleMarker(ll, { radius: 9, color: "#fff", weight: 3, fillColor: cor, fillOpacity: 1 });
+function novoMapa(id) {
+  const m = L.map(id).setView(PELOTAS, 13);
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "© OpenStreetMap" }).addTo(m);
+  setTimeout(() => m.invalidateSize(), 100);
+  return m;
+}
+
 function iniciarMapa() {
   if (mapa) return;
-  mapa = L.map("mapa").setView(PELOTAS, 13);
-  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "© OpenStreetMap" }).addTo(mapa);
-  mapa.on("click", e => {
-    if (pontos.length >= 2) return;
-    pontos.push(e.latlng);
-    const cor = pontos.length === 1 ? "#087e67" : "#b8372a";
-    marcadores.push(L.circleMarker(e.latlng, { radius: 9, color: "#fff", weight: 3, fillColor: cor, fillOpacity: 1 }).addTo(mapa));
-    if (pontos.length === 2) cotar();
-  });
-  setTimeout(() => mapa.invalidateSize(), 100);
+  mapa = novoMapa("mapa");
+  autocompletar($("origem"), $("sugOrigem"), e => { origem = e; desenhar(); });
+  autocompletar($("destino"), $("sugDestino"), e => { destino = e; desenhar(); });
 }
 
-function limparPontos() {
-  marcadores.forEach(m => m.remove());
-  pontos = []; marcadores = [];
-  $("valor").textContent = "—";
-  $("km").textContent = "Marque os dois pontos no mapa";
+async function desenhar() {
+  camadas.forEach(c => c.remove()); camadas = []; rota = null;
+  if (origem) camadas.push(ponto([origem.lat, origem.lng], "#087e67").addTo(mapa));
+  if (destino) camadas.push(ponto([destino.lat, destino.lng], "#b8372a").addTo(mapa));
+  if (!(origem && destino)) { if (origem || destino) mapa.setView([(origem || destino).lat, (origem || destino).lng], 15); return; }
+  $("km").textContent = "Calculando rota…";
+  rota = await calcularRota(origem, destino);
+  if (rota) camadas.push(L.polyline(rota.linha, { color: "#087e67", weight: 5 }).addTo(mapa));
+  mapa.fitBounds(L.latLngBounds([[origem.lat, origem.lng], [destino.lat, destino.lng]]), { padding: [30, 30] });
+  cotar();
 }
 
-function coords() {
-  const [a, b] = pontos;
-  return { p_ret_lat: a.lat, p_ret_lng: a.lng, p_ent_lat: b.lat, p_ent_lng: b.lng };
+function params() {
+  return { p_ret_lat: origem.lat, p_ret_lng: origem.lng, p_ent_lat: destino.lat, p_ent_lng: destino.lng,
+           p_rota_km: rota ? Number(rota.km.toFixed(2)) : null };
 }
 
 async function cotar() {
-  const { data, error } = await db.rpc("cotar_preco", coords());
-  if (error) { $("km").textContent = erroMsg(error); return; }
+  const { data, error } = await db.rpc("cotar_preco", params());
+  if (error) { $("km").textContent = erroMsg(error); $("valor").textContent = "—"; return; }
   $("valor").textContent = money(data[0].preco);
-  $("km").textContent = "Aprox. " + Number(data[0].distancia_km).toLocaleString("pt-BR") + " km";
+  $("km").textContent = Number(data[0].distancia_km).toLocaleString("pt-BR") + " km" + (data[0].fonte === "rota" ? " pela rua" : " (estimado)");
 }
 
 $("deliveryForm").addEventListener("submit", async ev => {
   ev.preventDefault();
-  if (pontos.length < 2) { alert("Toque no mapa para marcar a retirada e a entrega."); return; }
+  if (!origem || !destino || !$("origem").dataset.escolhido || !$("destino").dataset.escolhido) {
+    alert("Escolha os dois endereços na lista de sugestões."); return;
+  }
   const botao = ev.target.querySelector('button[type="submit"]');
   botao.disabled = true;
   try {
     const { data, error } = await db.rpc("criar_pedido", {
-      p_retirada: $("origem").value.trim(), p_entrega: $("destino").value.trim(), p_item: $("tipo").value, ...coords()
+      p_retirada: $("origem").value.trim(), p_entrega: $("destino").value.trim(), p_item: $("tipo").value, ...params()
     });
     if (error) throw error;
     const p = data[0];
     mostrarPedido({ id: p.pedido_id, retirada: $("origem").value.trim(), entrega: $("destino").value.trim(),
-                    item: $("tipo").value, preco: p.valor, status: "procurando", codigo: p.cod });
+      item: $("tipo").value, preco: p.valor, status: "procurando", codigo: p.cod,
+      ret_lat: origem.lat, ret_lng: origem.lng, ent_lat: destino.lat, ent_lng: destino.lng });
   } catch (e) { alert("Não foi possível fazer o pedido: " + erroMsg(e)); }
   finally { botao.disabled = false; }
 });
 
-function mostrarPedido(p) {
+async function mostrarPedido(p) {
   pedido = p;
-  show("formCard", false); show("pedido", true);
-  show("btnCancelar", true); show("btnNovo", false);
+  show("formCard", false); show("pedido", true); show("btnCancelar", true); show("btnNovo", false);
   $("resumo").textContent = "Retirada: " + p.retirada + " | Entrega: " + p.entrega + " | Item: " + p.item + " | Valor: " + money(p.preco);
+  if (!mapaPed) mapaPed = novoMapa("mapaPedido"); else setTimeout(() => mapaPed.invalidateSize(), 60);
+  if (p.ret_lat == null) {   // pedido recuperado ao reabrir: busca coordenadas
+    const { data } = await db.from("pedidos").select("ret_lat,ret_lng,ent_lat,ent_lng").eq("id", p.id).single();
+    Object.assign(p, data);
+  }
+  camadasPed.forEach(c => c.remove());
+  camadasPed = [ponto([p.ret_lat, p.ret_lng], "#087e67").addTo(mapaPed), ponto([p.ent_lat, p.ent_lng], "#b8372a").addTo(mapaPed)];
+  mapaPed.fitBounds(L.latLngBounds([[p.ret_lat, p.ret_lng], [p.ent_lat, p.ent_lng]]), { padding: [30, 30] });
   atualizarStatus();
-  // Tempo real: o Supabase avisa quando o pedido muda (RLS garante que só recebemos os nossos).
+  // Tempo real: status do pedido + posição do motoboy (RLS garante que só recebemos os nossos).
   if (canal) db.removeChannel(canal);
   canal = db.channel("pedido-" + p.id)
     .on("postgres_changes", { event: "UPDATE", schema: "public", table: "pedidos", filter: "id=eq." + p.id }, atualizarStatus)
+    .on("postgres_changes", { event: "*", schema: "public", table: "posicoes", filter: "pedido_id=eq." + p.id },
+        msg => msg.new && msg.new.lat && moverMoto(msg.new.lat, msg.new.lng))
     .subscribe();
+}
+
+function moverMoto(lat, lng) {
+  if (!mapaPed) return;
+  if (!motoMarker) {
+    motoMarker = L.marker([lat, lng], { icon: L.divIcon({ html: "🛵", className: "", iconSize: [30, 30] }) }).addTo(mapaPed);
+  } else motoMarker.setLatLng([lat, lng]);
 }
 
 async function atualizarStatus() {
@@ -87,6 +114,10 @@ async function atualizarStatus() {
     cancelado: "Pedido cancelado."
   };
   $("estado").textContent = textos[s.status] || s.status;
+  if (s.status === "aceito" || s.status === "coletado") {
+    const { data: pos } = await db.from("posicoes").select("lat,lng").eq("pedido_id", pedido.id).maybeSingle();
+    if (pos) moverMoto(pos.lat, pos.lng);
+  } else if (motoMarker) { motoMarker.remove(); motoMarker = null; }
   if (s.status === "entregue" || s.status === "cancelado") { show("btnCancelar", false); show("btnNovo", true); }
 }
 
@@ -101,9 +132,10 @@ function novoPedido() {
   if (canal) db.removeChannel(canal);
   pedido = null; canal = null;
   show("pedido", false); show("formCard", true);
-  limparPontos();
+  origem = destino = rota = null; $("origem").value = $("destino").value = "";
+  camadas.forEach(c => c.remove()); camadas = [];
+  $("valor").textContent = "—"; $("km").textContent = "Escolha os dois endereços";
   setTimeout(() => mapa.invalidateSize(), 60);
 }
 
-// Segurança extra caso o tempo real caia: confere a cada 10 s.
-setInterval(atualizarStatus, 10000);
+setInterval(atualizarStatus, 10000);   // segurança caso o tempo real caia

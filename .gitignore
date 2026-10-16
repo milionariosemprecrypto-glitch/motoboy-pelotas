@@ -1,0 +1,3 @@
+node_modules/
+apps/*/www/shared/
+dist-admin/

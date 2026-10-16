@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#ffffff">
+<title>É-Já</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+<link rel="stylesheet" href="shared/style.css">
+<link rel="stylesheet" href="cliente.css">
+</head>
+<body class="tema-claro">
+<button id="sair" class="hidden"></button>
+
+<!-- ===== Boas-vindas (3 slides, só na primeira vez) ===== -->
+<section id="telaOnboarding" class="tela onboarding hidden">
+  <button id="obPular" class="ob-pular" onclick="fimOnboarding()">Pular</button>
+  <div class="ob-slides" id="obSlides">
+    <div class="ob-slide"><img src="shared/img/eja-logo-claro.svg" class="ob-logo" alt="É-Já"><h2>Pediu. <em>Partiu.</em></h2><p>Entregas por motoboy em Pelotas, rápidas e sem complicação.</p></div>
+    <div class="ob-slide"><div class="ob-icone">💰</div><h2>Preço <em>antes</em> de pedir</h2><p>Você vê quanto custa antes de confirmar. Sem surpresa.</p></div>
+    <div class="ob-slide"><div class="ob-icone">📍</div><h2>Acompanhe <em>ao vivo</em></h2><p>Veja o motoboy no mapa e compartilhe o rastreio pelo WhatsApp.</p></div>
+  </div>
+  <div class="ob-pontos"><i class="on"></i><i></i><i></i></div>
+  <button id="obProximo" class="btn-preto" onclick="proximoSlide()">Próximo</button>
+</section>
+
+<!-- ===== Login ===== -->
+<section id="telaAuth" class="tela hidden">
+  <div class="auth-wrap">
+    <div class="hero"><img src="shared/img/eja-logo-claro.svg" alt="É-Já — Pediu. Partiu."></div>
+    <div class="card-claro">
+      <h2 id="authTitulo">Entrar</h2>
+      <form id="authForm">
+        <div id="campoNome" class="hidden">
+          <label for="authNome">Seu nome</label>
+          <input id="authNome" maxlength="80" placeholder="Nome e sobrenome">
+        </div>
+        <label for="authEmail">E-mail</label>
+        <input id="authEmail" type="email" required autocomplete="email">
+        <label for="authSenha">Senha</label>
+        <input id="authSenha" type="password" required minlength="6" autocomplete="current-password">
+        <button id="authBtn" class="btn-preto" type="submit">Entrar</button>
+      </form>
+      <button id="authLink" class="link" type="button">Receber link de acesso por e-mail</button>
+      <button id="authTroca" class="link" type="button"></button>
+      <div id="authMsg" class="erro"></div>
+    </div>
+  </div>
+</section>
+
+<div id="telaApp" class="hidden">
+  <!-- ===== Início ===== -->
+  <section id="home" class="tela aba">
+    <div class="topo-home">
+      <button class="loc-atual" onclick="atualizarLocal(true)"><i class="ponto-azul"></i><span id="locAtual">Localização atual</span> ▾</button>
+      <img src="shared/img/eja-wordmark-claro.svg" class="mini-logo" alt="É-Já">
+    </div>
+    <div id="cardBoasVindas" class="boas-vindas hidden">
+      <b>Bem-vindo ao É-Já! 🧡</b>
+      <span>Sua primeira entrega está a 3 toques: escolha o destino, veja o preço e confirme.</span>
+    </div>
+    <div class="busca-pill">
+      <button id="pillParaOnde" class="busca-btn" onclick="abrirPlano()"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/></svg>Para onde?</button>
+      <button class="mais-tarde" onclick="maisTarde()"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/></svg>Mais tarde</button>
+    </div>
+    <div class="lugares" id="lugares"></div>
+
+    <h3 class="secao">Para você <span>›</span></h3>
+    <div class="servicos" id="servicos"></div>
+
+    <h3 class="secao">Aproveite</h3>
+    <div class="promos">
+      <div class="promo promo-laranja"><b>Preço fixo</b><span>Você vê o valor antes de confirmar.</span><i>💰</i></div>
+      <div class="promo promo-preto"><b>Rastreio ao vivo</b><span>Mande o link pro destinatário pelo WhatsApp.</span><i>📍</i></div>
+      <div class="promo promo-claro"><b>Motoboys verificados</b><span>CNH e documentos conferidos.</span><i>✅</i></div>
+    </div>
+  </section>
+
+  <!-- ===== Opções ===== -->
+  <section id="opcoes" class="tela aba hidden">
+    <h1 class="titulo-tela">Opções</h1>
+    <div class="grade-servicos" id="gradeServicos"></div>
+  </section>
+
+  <!-- ===== Atividade ===== -->
+  <section id="atividade" class="tela aba hidden">
+    <h1 class="titulo-tela">Atividade</h1>
+    <div id="listaAtividade" class="lista"></div>
+  </section>
+
+  <!-- ===== Conta ===== -->
+  <section id="conta" class="tela aba hidden">
+    <h1 class="titulo-tela" id="contaNome">Conta</h1>
+    <div class="small" id="contaEmail"></div>
+    <div class="lista">
+      <button class="item-lista" onclick="definirLugar('casa')"><i>🏠</i><div><b>Casa</b><span id="contaCasa">Adicionar</span></div></button>
+      <button class="item-lista" onclick="definirLugar('trabalho')"><i>💼</i><div><b>Trabalho</b><span id="contaTrabalho">Adicionar</span></div></button>
+      <a class="item-lista" href="https://eja-site.pages.dev/privacidade/" target="_blank"><i>🔒</i><div><b>Privacidade</b><span>Como cuidamos dos seus dados</span></div></a>
+      <a class="item-lista" href="https://eja-site.pages.dev/termos/" target="_blank"><i>📄</i><div><b>Termos de uso</b><span></span></div></a>
+      <a class="item-lista" href="https://eja-site.pages.dev/excluir-conta/" target="_blank"><i>❓</i><div><b>Ajuda e contato</b><span>Suporte, direitos LGPD</span></div></a>
+      <button class="item-lista" onclick="db.auth.signOut()"><i>↩</i><div><b>Sair</b><span></span></div></button>
+    </div>
+    <button id="btnExcluirConta" class="btn-perigo" onclick="excluirConta()">Excluir minha conta</button>
+  </section>
+
+  <nav class="nav-flutuante" id="navBar">
+    <button id="navHome" class="on" onclick="irAba('home')"><svg viewBox="0 0 24 24"><path d="M4 11l8-7 8 7v9h-5v-6H9v6H4z"/></svg>Início</button>
+    <button id="navOpcoes" onclick="irAba('opcoes')"><svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="1.6"/><circle cx="12" cy="6" r="1.6"/><circle cx="18" cy="6" r="1.6"/><circle cx="6" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="18" cy="12" r="1.6"/><circle cx="6" cy="18" r="1.6"/><circle cx="12" cy="18" r="1.6"/><circle cx="18" cy="18" r="1.6"/></svg>Opções</button>
+    <button id="navAtividade" onclick="irAba('atividade')"><svg viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h6M9 12h6M9 16h4"/></svg>Atividade</button>
+    <button id="navConta" onclick="irAba('conta')"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-4 4.5-6 8-6s7 2 8 6"/></svg>Conta</button>
+  </nav>
+
+  <!-- ===== Planejar (origem/destino) ===== -->
+  <section id="telaPlano" class="tela sobre hidden">
+    <div class="plano-topo">
+      <button class="voltar" onclick="fecharPlano()">←</button>
+      <h2>Planeje sua entrega</h2>
+    </div>
+    <div class="chips">
+      <button class="chip" onclick="maisTarde()">🕒 Ir agora ▾</button>
+      <button class="chip" id="chipCategoria" onclick="irAba('opcoes'); fecharPlano()">📦 <span id="categoriaAtual">Entrega rápida</span> ▾</button>
+    </div>
+    <div class="caixa-rota">
+      <div class="trilho"><i class="t-a"></i><i class="t-linha"></i><i class="t-b"></i></div>
+      <div class="campos">
+        <div class="campo"><input id="origem" placeholder="Endereço de retirada" autocomplete="off" maxlength="200"><div id="sugOrigem" class="sugestoes"></div></div>
+        <div class="campo"><input id="destino" placeholder="Para onde?" autocomplete="off" maxlength="200"><div id="sugDestino" class="sugestoes"></div></div>
+      </div>
+    </div>
+    <div class="chips">
+      <button class="chip" onclick="usarLugar('casa')">🏠 Casa</button>
+      <button class="chip" onclick="usarLugar('trabalho')">💼 Trabalho</button>
+      <button class="chip" onclick="abrirPinoMapa()">📍 Escolher no mapa</button>
+    </div>
+    <div id="listaRecentes" class="lista"></div>
+  </section>
+
+  <!-- ===== Escolher no mapa (pino) ===== -->
+  <section id="telaPino" class="tela sobre hidden">
+    <div id="mapaPino" class="mapa-cheio"></div>
+    <div class="pino-central"><i></i></div>
+    <button class="fab-voltar" onclick="fecharPino()">←</button>
+    <div class="folha">
+      <div class="alca"></div>
+      <h2 class="centro">Insira seu destino</h2>
+      <p class="small centro">Arraste o mapa para mover o marcador</p>
+      <div class="campo-falso" id="pinoNome">Para onde?</div>
+      <button class="btn-preto" onclick="confirmarPino()">Confirmar destino</button>
+    </div>
+  </section>
+
+  <!-- ===== Confirmar (preço antes) ===== -->
+  <section id="telaConfirmar" class="tela sobre hidden">
+    <div id="mapa" class="mapa-cheio mapa-meio"></div>
+    <button class="fab-voltar" onclick="voltarDoConfirmar()">←</button>
+    <form id="deliveryForm" class="folha">
+      <div class="alca"></div>
+      <div class="rota-resumo"><div><i class="t-a"></i><span id="resOrigem"></span></div><div><i class="t-b"></i><span id="resDestino"></span></div></div>
+      <label for="tipo">O que será entregue?</label>
+      <select id="tipo"></select>
+      <div class="opcao-preco">
+        <div class="op-icone">🛵</div>
+        <div class="op-txt"><b>É-Já Moto · <span id="tagCategoria">Entrega rápida</span></b><span id="km">Calculando…</span></div>
+        <strong id="valor">—</strong>
+      </div>
+      <p class="small">Preço calculado antes de confirmar. Pagamento direto ao motoboy.</p>
+      <button id="btnConfirmar" class="btn-preto" type="submit">Confirmar entrega</button>
+    </form>
+  </section>
+
+  <!-- ===== Pedido em andamento ===== -->
+  <section id="pedido" class="tela sobre hidden" aria-live="polite">
+    <div id="mapaPedido" class="mapa-cheio mapa-meio"></div>
+    <button class="fab-voltar" onclick="sairDoPedido()">←</button>
+    <div class="folha">
+      <div class="alca"></div>
+      <div id="estado" class="estado-titulo">Procurando um motoboy disponível…</div>
+      <div id="barraBuscaCli" class="barra-busca"><i></i></div>
+      <div id="codigoBox" class="codigo-box hidden">Código para o destinatário <b id="codigoTxt"></b></div>
+      <div id="resumo" class="small"></div>
+      <button id="btnWhats" class="btn-whats" onclick="compartilharWhats()">Compartilhar rastreio no WhatsApp</button>
+      <div id="avaliar" class="avaliar hidden">
+        <b>Como foi a entrega?</b>
+        <div class="estrelas" id="estrelas"></div>
+        <div id="avaliarMsg" class="small"></div>
+      </div>
+      <button id="btnCancelar" class="btn-claro" onclick="cancelarPedido()">Cancelar pedido</button>
+      <button id="btnNovo" class="btn-preto hidden" onclick="novoPedido()">Fazer outro pedido</button>
+    </div>
+  </section>
+
+  <div id="toast" class="toast hidden"></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script src="https://unpkg.com/@maplibre/maplibre-gl-leaflet@0.0.22/leaflet-maplibre-gl.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="shared/config.js"></script>
+<script src="shared/auth.js"></script>
+<script src="shared/geo.js"></script>
+<script src="shared/push.js"></script>
+<script src="shared/mapa.js"></script>
+<script src="shared/alerta.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

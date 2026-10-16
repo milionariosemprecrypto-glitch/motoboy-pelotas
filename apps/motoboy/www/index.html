@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0b0b0b">
+<title>É-Já Motoboy</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+<link rel="stylesheet" href="shared/style.css">
+</head>
+<body>
+<header>
+  <div class="brand"><img src="shared/img/eja-wordmark.svg" alt="É-Já"><span class="tag">MOTOBOY</span></div>
+  <button id="sair" class="hidden">Sair</button>
+</header>
+<main>
+  <section id="telaAuth" class="hidden">
+    <div class="hero"><img src="shared/img/eja-logo.svg" alt="É-Já — Pediu. Partiu."></div>
+    <div class="card">
+      <h2 id="authTitulo">Entrar</h2>
+      <form id="authForm">
+        <div id="campoNome" class="hidden">
+          <label for="authNome">Seu nome</label>
+          <input id="authNome" maxlength="80" placeholder="Nome e sobrenome">
+        </div>
+        <label for="authEmail">E-mail</label>
+        <input id="authEmail" type="email" required autocomplete="email">
+        <label for="authSenha">Senha</label>
+        <input id="authSenha" type="password" required minlength="6" autocomplete="current-password">
+        <button id="authBtn" class="primary" type="submit">Entrar</button>
+      </form>
+      <button id="authLink" class="link" type="button">Receber link de acesso por e-mail</button>
+      <button id="authTroca" class="link" type="button"></button>
+      <div id="authMsg" class="erro"></div>
+    </div>
+  </section>
+  <section id="telaApp" class="hidden">
+    <div id="telaCadastro" class="hidden">
+      <h1>Cadastro de <em>motoboy</em></h1>
+      <p class="intro">Envie seus dados e documentos. Nossa equipe vai conferir e aprovar seu cadastro.</p>
+      <div class="card">
+        <form id="cadForm">
+          <label for="cNome">Nome completo</label><input id="cNome" required maxlength="80">
+          <label for="cTel">Celular (WhatsApp)</label><input id="cTel" required inputmode="tel" maxlength="20" placeholder="(53) 9 9999-9999">
+          <label for="cCpf">CPF</label><input id="cCpf" required inputmode="numeric" maxlength="14" placeholder="Somente números">
+          <label for="cNasc">Data de nascimento</label><input id="cNasc" type="date" required>
+          <p class="small">Motofrete exige 21 anos ou mais (Lei 12.009/2009).</p>
+          <label for="cCnh">Número da CNH</label><input id="cCnh" required maxlength="20">
+          <label for="cCat">Categoria da CNH</label>
+          <select id="cCat" required><option value="">Selecione</option><option>A</option><option>AB</option><option>AC</option><option>AD</option><option>AE</option><option>B</option></select>
+          <label for="cPrimHab">Data da 1ª habilitação na categoria A</label><input id="cPrimHab" type="date" required>
+          <p class="small">É preciso ter CNH categoria A há pelo menos 2 anos.</p>
+          <label for="cValidade">Validade da CNH</label><input id="cValidade" type="date" required>
+          <label for="cPlaca">Placa da moto</label><input id="cPlaca" required maxlength="10" placeholder="ABC1D23">
+          <label for="cModelo">Modelo da moto</label><input id="cModelo" required maxlength="60" placeholder="Ex.: Honda CG 160">
+          <label for="cFoto">Sua foto (rosto)</label><input id="cFoto" type="file" accept="image/*" capture="user" required>
+          <label for="cDoc">Foto da CNH</label><input id="cDoc" type="file" accept="image/*,application/pdf" required>
+          <label for="cCurso">Certificado do curso de motofrete (Res. CONTRAN)</label><input id="cCurso" type="file" accept="image/*,application/pdf" required>
+          <label for="cAnt">Certidão de antecedentes criminais (opcional)</label><input id="cAnt" type="file" accept="image/*,application/pdf">
+          <label class="aceite"><input type="checkbox" id="cAntConsent"><span>Autorizo o É-Já a tratar a certidão de antecedentes que enviei, apenas para verificar
+            a segurança da atividade de entrega, com acesso restrito e descarte do arquivo após a análise (LGPD art. 11, I). Posso revogar a qualquer momento.</span></label>
+          <button id="cadBtn" class="primary" type="submit">Enviar cadastro</button>
+          <div id="cadMsg" class="erro"></div>
+        </form>
+      </div>
+    </div>
+
+    <div id="telaAguardando" class="card hidden">
+      <span class="pill">Aguardando aprovação</span>
+      <h2 style="margin-top:14px">Recebemos seu cadastro!</h2>
+      <p class="small">Estamos conferindo seus documentos. Assim que for aprovado, você poderá ficar online e aceitar corridas.</p>
+      <button class="secondary" onclick="carregar()">Verificar novamente</button>
+      <button class="secondary" onclick="show('telaAguardando',false);show('telaCadastro',true)">Corrigir dados</button>
+      <button class="btn-perigo" onclick="excluirConta()">Excluir minha conta</button>
+    </div>
+
+    <div id="telaBloqueado" class="card hidden">
+      <span id="bloqTag" class="pill">Conta suspensa</span>
+      <h2 id="bloqTitulo" style="margin-top:14px">Cadastro bloqueado</h2>
+      <p class="small">Motivo informado pela equipe:</p>
+      <div id="bloqMotivo" class="status">—</div>
+      <p id="bloqData" class="small"></p>
+      <div id="contestacaoInfo" class="status hidden"></div>
+      <div id="contestarBox">
+        <label for="contestarTexto">Discorda? Explique e envie sua contestação (análise em até 7 dias)</label>
+        <textarea id="contestarTexto" maxlength="2000" rows="4" placeholder="Descreva o que aconteceu e, se for o caso, envie novos documentos em 'Corrigir dados'."></textarea>
+        <button id="btnContestar" class="primary" onclick="contestar()">Contestar</button>
+        <div id="contestarMsg" class="erro"></div>
+      </div>
+      <button id="btnCorrigirReprov" class="secondary hidden" onclick="show('telaBloqueado',false);show('telaCadastro',true)">Corrigir dados e reenviar</button>
+      <button class="btn-perigo" onclick="excluirConta()">Excluir minha conta</button>
+    </div>
+
+    <div id="telaTrabalho" class="hidden">
+      <div id="mapa" class="mapa-full"></div>
+      <button class="fab fab-tl" onclick="motoAba('ganhos')" aria-label="Menu"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+      <button id="pillGanhos" class="pill-ganhos" onclick="motoAba('ganhos')"><span>R$</span> <b id="pillValor">0,00</b></button>
+      <button class="fab fab-tr" onclick="centralizar()" aria-label="Centralizar"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/><circle cx="12" cy="12" r="7.5"/></svg></button>
+      <button class="fab fab-ganhos" onclick="motoAba('ganhos')" aria-label="Ganhos"><svg viewBox="0 0 24 24"><path d="M5 20V11M10 20V6M15 20v-8M20 20V9"/></svg></button>
+
+      <div id="motoBar" class="hidden">
+        <button id="disponivel" class="btn-redondo" onclick="alternarDisponibilidade()">FICAR<br>ONLINE</button>
+        <div id="rotuloOffline" class="rotulo-redondo hidden">FICAR OFFLINE</div>
+      </div>
+
+      <div class="painel">
+        <div class="alca"></div>
+        <div class="painel-topo">
+          <button id="segInicio" class="icone-btn active" onclick="motoAba('inicio')" aria-label="Início"><svg viewBox="0 0 24 24"><path d="M4 7h10M4 17h10M18 7h2M18 17h2"/><circle cx="16" cy="7" r="2"/><circle cx="16" cy="17" r="2"/></svg></button>
+          <div id="motoStatusTitulo" class="painel-titulo">Você está offline</div>
+          <button id="segGanhos" class="icone-btn" onclick="motoAba('ganhos')" aria-label="Ganhos"><svg viewBox="0 0 24 24"><path d="M5 6h14M5 12h14M5 18h14"/></svg></button>
+        </div>
+        <div id="barraBusca" class="barra-busca hidden"><i></i></div>
+        <div id="motoInicio">
+          <div id="motoStatus" class="painel-sub">Fique online para receber corridas.</div>
+          <div id="corrida" class="hidden">
+            <span class="pill">Corrida em andamento</span>
+            <h2 id="corridaTitulo"></h2>
+            <div id="corridaInfo" class="painel-sub"></div>
+            <label for="codigoEntrega" id="codigoLabel" class="hidden">Código de confirmação do destinatário</label>
+            <input id="codigoEntrega" class="hidden" inputmode="numeric" maxlength="4" placeholder="4 dígitos">
+            <button class="secondary" onclick="abrirNavegacao()">Abrir navegação (Google Maps)</button>
+            <button id="corridaBtn" class="primary" onclick="avancar()"></button>
+          </div>
+        </div>
+        <div id="motoGanhos" class="hidden">
+          <div class="painel-sub">Ganhos de hoje</div>
+          <div id="ganhosTotal" class="total">R$ 0,00</div>
+          <div id="ganhosResumo" class="painel-sub"></div>
+          <div id="ganhosLista"></div>
+          <button class="secondary" onclick="motoAba('inicio')">Voltar ao mapa</button>
+          <button class="link" onclick="db.auth.signOut()">Sair da conta</button>
+          <a class="link" href="https://eja-site.pages.dev/termos-motoboy/" target="_blank">Termos do Motoboy</a>
+          <a class="link" href="https://eja-site.pages.dev/privacidade/" target="_blank">Política de Privacidade</a>
+          <button class="btn-perigo" onclick="excluirConta()">Excluir minha conta</button>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+
+
+<div id="oferta" class="sheet sheet-oferta hidden">
+  <div class="oferta-topo"><span class="pill">Nova corrida</span><span class="pulso"></span></div>
+  <div><h2 id="ofertaPreco"></h2></div>
+  <div id="ofertaResumo" class="small"></div>
+  <div class="tempo"><div id="barraTempo"></div></div>
+  <button class="primary" onclick="aceitarCorrida()">Aceitar corrida</button>
+  <button class="secondary" onclick="recusarCorrida()">Recusar</button>
+</div>
+<footer>É-JÁ · PEDIU. PARTIU. · Pelotas-RS</footer>
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script src="https://unpkg.com/@maplibre/maplibre-gl-leaflet@0.0.22/leaflet-maplibre-gl.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="shared/config.js"></script>
+<script src="shared/auth.js"></script>
+<script src="shared/geo.js"></script>
+<script src="shared/push.js"></script>
+<script src="shared/mapa.js"></script>
+<script src="shared/alerta.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

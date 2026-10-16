@@ -1,0 +1,9 @@
+project_id = "waalgvcywtfnrrpkrhti"
+[functions.notificar]
+verify_jwt = false   # chamada pelo próprio banco; protegida pelo header x-eja-secret
+
+[functions.excluir-conta]
+verify_jwt = false   # valida o JWT dentro da função (precisa responder ao preflight CORS)
+
+[functions.retencao]
+verify_jwt = false   # chamada pelo pg_cron; protegida pelo header x-eja-secret

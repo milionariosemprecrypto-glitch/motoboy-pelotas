@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="robots" content="noindex, nofollow"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>É-Já Admin</title>
+<link rel="stylesheet" href="../shared/style.css">
+<style>
+main { max-width:1100px; }
+table { width:100%; border-collapse:collapse; font-size:13px; }
+th, td { text-align:left; padding:8px 6px; border-top:1px solid var(--border); vertical-align:top; }
+td button { padding:6px 10px; border-radius:8px; border:1px solid var(--primary); background:transparent; font-family:inherit; color:var(--primary); font-weight:700; cursor:pointer; margin:2px; }
+td button.bloq { border-color:#ff3b30; color:#ff3b30; }
+.st-pendente { color:#ff8a1f; font-weight:700; } .st-aprovado { color:#2ecc71; font-weight:700; } .st-bloqueado { color:#ff3b30; font-weight:700; }
+.wrap { overflow-x:auto; }
+</style>
+</head>
+<body>
+<header><div class="brand"><img src="../shared/img/eja-wordmark.svg" alt="É-Já"><span class="tag">ADMIN</span></div><button id="sair" class="hidden">Sair</button></header>
+<main>
+  <section id="telaAuth" class="hidden">
+    <div class="hero"><img src="../shared/img/eja-logo.svg" alt="É-Já — Pediu. Partiu."></div>
+    <div class="card" style="max-width:420px;margin:auto">
+      <h2 id="authTitulo">Entrar</h2>
+      <form id="authForm">
+        <div id="campoNome" class="hidden"><input id="authNome"></div>
+        <label for="authEmail">E-mail</label><input id="authEmail" type="email" required>
+        <label for="authSenha">Senha</label><input id="authSenha" type="password" required>
+        <button id="authBtn" class="primary" type="submit">Entrar</button>
+      </form>
+      <button id="authLink" class="link hidden" type="button"></button>
+      <button id="authTroca" class="link hidden" type="button"></button>
+      <div id="authMsg" class="erro"></div>
+    </div>
+  </section>
+  <section id="telaApp" class="hidden">
+    <div id="semAcesso" class="card hidden"><h2>Sem acesso</h2><p class="small">Esta conta não é administradora.</p></div>
+    <div id="painel" class="hidden">
+      <div class="seg">
+        <button id="abaM" class="active" onclick="aba('m')">Motoboys</button>
+        <button id="abaC" onclick="aba('c')">Clientes</button>
+        <button id="abaP" onclick="aba('p')">Pedidos</button>
+        <button id="abaR" onclick="aba('r')">Contestações <span id="qtdR"></span></button>
+      </div>
+      <div id="secM" class="card wrap">
+        <h2>Motoboys <button class="link" style="display:inline" onclick="carregarMotoboys()">↻ atualizar</button></h2>
+        <table><thead><tr><th>Nome / contato</th><th>CPF · CNH</th><th>Moto</th><th>Documentos</th><th>Status</th><th>Ações</th></tr></thead><tbody id="tbM"></tbody></table>
+      </div>
+      <div id="secC" class="card wrap hidden">
+        <h2>Clientes <button class="link" style="display:inline" onclick="carregarClientes()">↻ atualizar</button></h2>
+        <table><thead><tr><th>Nome</th><th>E-mail</th><th>Telefone</th><th>Cadastro</th><th>Pedidos</th><th>Último pedido</th></tr></thead><tbody id="tbC"></tbody></table>
+      </div>
+      <div id="secR" class="card wrap hidden">
+        <h2>Contestações <button class="link" style="display:inline" onclick="carregarContestacoes()">↻ atualizar</button></h2>
+        <p class="small">Responda em até 7 dias (Termos do Motoboy). "Deferir" reaprova o motoboy; "Indeferir" mantém a decisão. A resposta aparece no app dele.</p>
+        <table><thead><tr><th>Data</th><th>Motoboy</th><th>Status atual · motivo</th><th>Contestação</th><th>Situação</th><th>Ações</th></tr></thead><tbody id="tbR"></tbody></table>
+      </div>
+      <div id="historico" class="card hidden"><h2>Histórico de status — <span id="histNome"></span> <button class="link" style="display:inline" onclick="show('historico',false)">fechar ✕</button></h2>
+        <table><thead><tr><th>Data</th><th>De → Para</th><th>Motivo</th><th>Por</th></tr></thead><tbody id="tbH"></tbody></table></div>
+      <div id="secP" class="card wrap hidden">
+        <h2>Pedidos (últimos 200) <button class="link" style="display:inline" onclick="carregarPedidos()">↻ atualizar</button></h2>
+        <table><thead><tr><th>Data</th><th>Cliente</th><th>Motoboy</th><th>Retirada → Entrega</th><th>km</th><th>Valor</th><th>Status</th></tr></thead><tbody id="tbP"></tbody></table>
+      </div>
+    </div>
+  </section>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../shared/config.js"></script>
+<script src="../shared/auth.js"></script>
+<script>
+// Painel admin: o banco só responde se profiles.role = 'admin' (verificado nas RPCs e no RLS).
+iniciarAuth({ role: "cliente", exigirAceite: false, aoEntrar: async (u) => {
+  const { data } = await db.from("profiles").select("role").eq("id", u.id).maybeSingle();
+  const admin = data && data.role === "admin";
+  show("painel", admin); show("semAcesso", !admin);
+  if (admin) { carregarMotoboys(); carregarClientes(); carregarPedidos(); carregarContestacoes(); }
+}});
+
+function aba(a) {
+  ["m", "c", "p", "r"].forEach(x => { show("sec" + x.toUpperCase(), a === x); $("aba" + x.toUpperCase()).classList.toggle("active", a === x); });
+}
+async function carregarClientes() {
+  const { data, error } = await db.rpc("admin_clientes");
+  const tb = $("tbC"); tb.textContent = "";
+  if (error) return alert(erroMsg(error));
+  data.forEach(c => {
+    const tr = document.createElement("tr");
+    tr.append(td((c.nome || "(sem nome)") + (c.role === "admin" ? " · admin" : "")), td(c.email), td(c.telefone || "—"),
+      td(dt(c.criado_em)), td(String(c.pedidos)), td(dt(c.ultimo_pedido)));
+    tb.append(tr);
+  });
+  if (!data.length) tb.innerHTML = '<tr><td colspan="6" class="small">Nenhum cliente.</td></tr>';
+}
+const td = (txt, cls) => { const c = document.createElement("td"); c.textContent = txt ?? ""; if (cls) c.className = cls; return c; };
+const dt = d => d ? new Date(d).toLocaleString("pt-BR") : "—";
+
+async function abrirDoc(caminho) {
+  const { data, error } = await db.storage.from("motoboy-docs").createSignedUrl(caminho, 120);
+  if (error) return alert(erroMsg(error));
+  window.open(data.signedUrl, "_blank");
+}
+
+async function carregarMotoboys() {
+  const { data, error } = await db.rpc("admin_motoboys");
+  const tb = $("tbM"); tb.textContent = "";
+  if (error) return alert(erroMsg(error));
+  data.forEach(m => {
+    const tr = document.createElement("tr");
+    tr.append(td((m.nome || "(sem nome)") + "\n" + (m.email || "") + "\n" + (m.telefone || "")),
+      td((m.cpf || "—") + " · CNH " + (m.cnh || "—") + " (" + (m.cnh_categoria || "?") + ")" +
+         "\nNasc.: " + d1(m.nascimento) + idade(m.nascimento) + "\n1ª hab.: " + d1(m.cnh_primeira_hab) + " · val.: " + d1(m.cnh_validade)),
+      td((m.modelo || "—") + " · " + (m.placa || "—")));
+    const docs = document.createElement("td");
+    [["Foto", m.foto_path], ["CNH", m.doc_path], ["Curso", m.curso_path], ["Antecedentes", m.antecedentes_path]].forEach(([n, p]) => {
+      if (!p) return; const b = document.createElement("button"); b.textContent = n; b.onclick = () => abrirDoc(p); docs.append(b);
+    });
+    if (!m.enviado_em) docs.textContent = "não enviou";
+    tr.append(docs, td(m.status + (m.online ? " · online" : "") + (m.status_motivo ? "\nMotivo: " + m.status_motivo : "") +
+      (m.contestacao_aberta ? "\n⚠ contestação aberta" : ""), "st-" + m.status));
+    const acoes = document.createElement("td");
+    [["aprovado", "Aprovar", ""], ["reprovado", "Reprovar", "bloq"], ["bloqueado", "Suspender", "bloq"], ["pendente", "Voltar p/ pendente", ""]].forEach(([s, n, c]) => {
+      if (m.status === s) return;
+      const b = document.createElement("button"); b.textContent = n; b.className = c;
+      b.onclick = async () => {
+        const motivo = prompt(n + " " + (m.nome || m.email) + "\n\nMotivo (obrigatório; o motoboy verá este texto):", s === "aprovado" ? "Documentos conferidos" : "");
+        if (motivo === null) return;
+        const { error } = await db.rpc("definir_status_motoboy", { p_motoboy: m.id, p_status: s, p_motivo: motivo });
+        if (error) alert(erroMsg(error)); carregarMotoboys();
+      };
+      acoes.append(b);
+    });
+    const h = document.createElement("button"); h.textContent = "Histórico"; h.onclick = () => verHistorico(m); acoes.append(h);
+    tr.append(acoes);
+    tr.style.whiteSpace = "pre-line";
+    tb.append(tr);
+  });
+  if (!data.length) tb.innerHTML = '<tr><td colspan="6" class="small">Nenhum motoboy cadastrado.</td></tr>';
+}
+
+const d1 = d => d ? new Date(d + "T12:00:00").toLocaleDateString("pt-BR") : "—";
+const idade = d => d ? " (" + Math.floor((Date.now() - new Date(d + "T12:00:00")) / (365.25 * 864e5)) + " anos)" : "";
+async function verHistorico(m) {
+  const { data, error } = await db.rpc("admin_historico", { p_motoboy: m.id });
+  if (error) return alert(erroMsg(error));
+  $("histNome").textContent = m.nome || m.email; const tb = $("tbH"); tb.textContent = "";
+  data.forEach(h => { const tr = document.createElement("tr"); tr.append(td(dt(h.em)), td((h.de || "—") + " → " + h.para), td(h.motivo), td(h.admin)); tb.append(tr); });
+  if (!data.length) tb.innerHTML = '<tr><td colspan="4" class="small">Sem mudanças registradas.</td></tr>';
+  show("historico", true); $("historico").scrollIntoView({ behavior: "smooth" });
+}
+async function carregarContestacoes() {
+  const { data, error } = await db.rpc("admin_contestacoes");
+  const tb = $("tbR"); tb.textContent = "";
+  if (error) return alert(erroMsg(error));
+  const abertas = data.filter(c => c.situacao === "aberta").length;
+  $("qtdR").textContent = abertas ? "(" + abertas + ")" : "";
+  data.forEach(c => {
+    const tr = document.createElement("tr");
+    tr.append(td(dt(c.criado_em)), td((c.nome || "") + "\n" + (c.email || "")), td(c.status + "\n" + (c.motivo || "")), td(c.texto),
+      td(c.situacao + (c.resposta ? "\n" + c.resposta : ""), "st-" + c.situacao));
+    const a = document.createElement("td");
+    if (c.situacao === "aberta") [["deferida", "Deferir", ""], ["indeferida", "Indeferir", "bloq"]].forEach(([d, n, cl]) => {
+      const b = document.createElement("button"); b.textContent = n; b.className = cl;
+      b.onclick = async () => {
+        const r = prompt(n + " a contestação de " + (c.nome || c.email) + "\n\nResposta ao motoboy (obrigatória):");
+        if (r === null) return;
+        const { error } = await db.rpc("responder_contestacao", { p_id: c.id, p_decisao: d, p_resposta: r });
+        if (error) alert(erroMsg(error)); carregarContestacoes(); carregarMotoboys();
+      };
+      a.append(b);
+    });
+    tr.append(a); tr.style.whiteSpace = "pre-line"; tb.append(tr);
+  });
+  if (!data.length) tb.innerHTML = '<tr><td colspan="6" class="small">Nenhuma contestação.</td></tr>';
+}
+
+async function carregarPedidos() {
+  const { data, error } = await db.rpc("admin_pedidos");
+  const tb = $("tbP"); tb.textContent = "";
+  if (error) return alert(erroMsg(error));
+  data.forEach(p => {
+    const tr = document.createElement("tr");
+    tr.append(td(dt(p.criado_em)), td(p.cliente), td(p.motoboy || "—"), td(p.retirada + " → " + p.entrega),
+      td(Number(p.distancia_km).toLocaleString("pt-BR")), td(money(p.preco)), td(p.status));
+    tb.append(tr);
+  });
+  if (!data.length) tb.innerHTML = '<tr><td colspan="7" class="small">Nenhum pedido.</td></tr>';
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,17 @@
+{
+  "name": "eja-cliente",
+  "private": true,
+  "scripts": {
+    "shared": "sh ../../scripts/copy-shared.sh",
+    "serve": "npm run shared && npx http-server www -p 8081",
+    "android:add": "npm run shared && npx cap add android",
+    "android:sync": "npm run shared && npx cap sync android",
+    "android:open": "npx cap open android"
+  },
+  "devDependencies": {
+    "@capacitor/android": "^7.6.9",
+    "@capacitor/cli": "^7.6.9",
+    "@capacitor/core": "^7.6.9",
+    "@capacitor/push-notifications": "^7.0.7"
+  }
+}

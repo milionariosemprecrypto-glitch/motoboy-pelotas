@@ -1,7 +1,8 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta charset="UTF-8">
+<meta name="robots" content="noindex, nofollow"><meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>É-Já Admin</title>
 <link rel="stylesheet" href="../shared/style.css">
 <style>
@@ -37,11 +38,16 @@ td button.bloq { border-color:#ff3b30; color:#ff3b30; }
     <div id="painel" class="hidden">
       <div class="seg">
         <button id="abaM" class="active" onclick="aba('m')">Motoboys</button>
+        <button id="abaC" onclick="aba('c')">Clientes</button>
         <button id="abaP" onclick="aba('p')">Pedidos</button>
       </div>
       <div id="secM" class="card wrap">
         <h2>Motoboys <button class="link" style="display:inline" onclick="carregarMotoboys()">↻ atualizar</button></h2>
         <table><thead><tr><th>Nome / contato</th><th>CPF · CNH</th><th>Moto</th><th>Documentos</th><th>Status</th><th>Ações</th></tr></thead><tbody id="tbM"></tbody></table>
+      </div>
+      <div id="secC" class="card wrap hidden">
+        <h2>Clientes <button class="link" style="display:inline" onclick="carregarClientes()">↻ atualizar</button></h2>
+        <table><thead><tr><th>Nome</th><th>E-mail</th><th>Telefone</th><th>Cadastro</th><th>Pedidos</th><th>Último pedido</th></tr></thead><tbody id="tbC"></tbody></table>
       </div>
       <div id="secP" class="card wrap hidden">
         <h2>Pedidos (últimos 200) <button class="link" style="display:inline" onclick="carregarPedidos()">↻ atualizar</button></h2>
@@ -59,12 +65,23 @@ iniciarAuth({ role: "cliente", aoEntrar: async (u) => {
   const { data } = await db.from("profiles").select("role").eq("id", u.id).maybeSingle();
   const admin = data && data.role === "admin";
   show("painel", admin); show("semAcesso", !admin);
-  if (admin) { carregarMotoboys(); carregarPedidos(); }
+  if (admin) { carregarMotoboys(); carregarClientes(); carregarPedidos(); }
 }});
 
 function aba(a) {
-  show("secM", a === "m"); show("secP", a === "p");
-  $("abaM").classList.toggle("active", a === "m"); $("abaP").classList.toggle("active", a === "p");
+  ["m", "c", "p"].forEach(x => { show("sec" + x.toUpperCase(), a === x); $("aba" + x.toUpperCase()).classList.toggle("active", a === x); });
+}
+async function carregarClientes() {
+  const { data, error } = await db.rpc("admin_clientes");
+  const tb = $("tbC"); tb.textContent = "";
+  if (error) return alert(erroMsg(error));
+  data.forEach(c => {
+    const tr = document.createElement("tr");
+    tr.append(td((c.nome || "(sem nome)") + (c.role === "admin" ? " · admin" : "")), td(c.email), td(c.telefone || "—"),
+      td(dt(c.criado_em)), td(String(c.pedidos)), td(dt(c.ultimo_pedido)));
+    tb.append(tr);
+  });
+  if (!data.length) tb.innerHTML = '<tr><td colspan="6" class="small">Nenhum cliente.</td></tr>';
 }
 const td = (txt, cls) => { const c = document.createElement("td"); c.textContent = txt ?? ""; if (cls) c.className = cls; return c; };
 const dt = d => d ? new Date(d).toLocaleString("pt-BR") : "—";

@@ -49,7 +49,8 @@ try:
 
         # 1. Motoboy se cadastra com documentos
         moto.goto("http://localhost:8090/motoboy/www/"); expect(moto.locator("#telaAuth")).to_be_visible(timeout=15000); shot(moto, "motoboy-01-login")
-        cli.goto("http://localhost:8090/cliente/www/"); expect(cli.locator("#telaAuth")).to_be_visible(timeout=15000); shot(cli, "cliente-01-login")
+        cli.goto("http://localhost:8090/cliente/www/"); expect(cli.locator("#telaOnboarding")).to_be_visible(timeout=15000); shot(cli, "cliente-00-boasvindas")
+        cli.click("#obPular"); expect(cli.locator("#telaAuth")).to_be_visible(timeout=15000); shot(cli, "cliente-01-login")
         login(moto, "motoboy/www/", "moto")
         expect(moto.locator("#telaCadastro")).to_be_visible(timeout=15000)
         shot(moto, "motoboy-02-cadastro")
@@ -83,11 +84,12 @@ try:
 
         # 5. Cliente pede com autocomplete + rota
         login(cli, "cliente/www/", "cliente")
-        expect(cli.locator("#formCard")).to_be_visible(timeout=15000)
+        expect(cli.locator("#home")).to_be_visible(timeout=15000); shot(cli, "cliente-01b-inicio"); passo("cliente vê a tela inicial")
+        cli.click("#pillParaOnde"); expect(cli.locator("#telaPlano")).to_be_visible(); shot(cli, "cliente-01c-plano")
         cli.fill("#origem", "Rua Quinze de Novembro"); cli.locator("#sugOrigem .sugestao").first.click(timeout=20000)
         cli.fill("#destino", "Avenida Bento Gonçalves"); cli.locator("#sugDestino .sugestao").first.click(timeout=20000)
         expect(cli.locator("#valor")).to_contain_text("R$", timeout=20000)
-        cli.evaluate("window.scrollTo(0, 120)"); shot(cli, "cliente-02-cotacao")
+        expect(cli.locator("#telaConfirmar")).to_be_visible(); cli.wait_for_timeout(3000); shot(cli, "cliente-02-cotacao")
         print("   cotação:", cli.inner_text("#valor"), "|", cli.inner_text("#km")); passo("autocomplete Pelotas + rota + preço do servidor")
         cli.click("#deliveryForm button[type=submit]")
         expect(cli.locator("#pedido")).to_be_visible(timeout=15000); passo("cliente cria pedido")
@@ -98,9 +100,9 @@ try:
         moto.click("#oferta button.primary")
         expect(moto.locator("#corrida")).to_be_visible(timeout=15000)
         expect(cli.locator("#estado")).to_contain_text("aceitou", timeout=20000); passo("cliente vê aceite (tempo real)")
-        codigo = re.search(r"(\d{4})", cli.inner_text("#estado")).group(1)
+        codigo = cli.inner_text("#codigoTxt").strip(); assert re.fullmatch(r"\d{4}", codigo)
         expect(cli.locator("#mapaPedido .pin-moto")).to_be_visible(timeout=25000); passo("cliente vê o motoboy no mapa (rastreio ao vivo)")
-        cli.locator("#pedido").scroll_into_view_if_needed(); shot(cli, "cliente-03-rastreio"); shot(moto, "motoboy-05-corrida")
+        shot(cli, "cliente-03-rastreio"); shot(moto, "motoboy-05-corrida")
         cm.set_geolocation({"latitude": -31.7700, "longitude": -52.3420}); moto.wait_for_timeout(12000)
         n = sql(f"select count(*) c from posicoes po join pedidos p on p.id=po.pedido_id where p.cliente_id='{users['cliente'][0]}' and abs(po.lat+31.77)<0.0005")[0]["c"]
         assert n == 1, "posição não atualizou"; passo("posição do motoboy atualiza (~10 s)")
@@ -112,6 +114,8 @@ try:
         moto.fill("#codigoEntrega", codigo); moto.click("#corridaBtn")
         expect(cli.locator("#estado")).to_contain_text("concluída", timeout=20000); passo("entrega concluída com código")
         shot(cli, "cliente-04-concluida")
+        cli.locator("#estrelas button").nth(4).click(); expect(cli.locator("#avaliarMsg")).to_contain_text("Obrigado", timeout=10000); passo("cliente avalia o motoboy")
+        cli.click("#btnNovo"); cli.click("#navAtividade"); expect(cli.locator("#listaAtividade .item-lista")).to_have_count(1, timeout=10000); shot(cli, "cliente-05-atividade"); passo("atividade mostra o histórico")
         moto.click("#segGanhos"); expect(moto.locator("#ganhosLista .corrida-item")).to_have_count(1, timeout=10000); passo("ganhos do motoboy")
         shot(moto, "motoboy-06-ganhos")
 

@@ -43,7 +43,7 @@ function criarMapa(id, opcoes = {}) {
     { maxZoom: 19, className: "tiles-suaves", attribution: "© OpenStreetMap" }).addTo(m);
   if (window.maplibregl && L.maplibreGL && temWebGL()) {
     estiloSuave()
-      .then(style => L.maplibreGL({ style, attribution: '© <a href="https://openfreemap.org">OpenFreeMap</a> © OpenStreetMap' }).addTo(m))
+      .then(style => { m._gl = L.maplibreGL({ style, attribution: '© <a href="https://openfreemap.org">OpenFreeMap</a> © OpenStreetMap' }).addTo(m); })
       .catch(raster);
   } else raster();
   setTimeout(() => m.invalidateSize(), 100);
@@ -57,3 +57,9 @@ const icone = {
   entrega: () => L.divIcon({ className: "", html: '<div class="pin pin-b">B</div>', iconSize: [30, 30], iconAnchor: [15, 15] })
 };
 const ROTA = { color: "#111111", weight: 5, opacity: .9 };
+
+// Recalcula o tamanho do mapa (use depois de mostrar uma tela que estava escondida).
+function ajustarMapa(m) {
+  m.invalidateSize();
+  if (m._gl) { try { m._gl.getMaplibreMap().resize(); m._gl._update(); } catch {} }
+}

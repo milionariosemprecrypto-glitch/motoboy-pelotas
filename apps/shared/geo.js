@@ -63,3 +63,12 @@ function autocompletar(input, lista, aoEscolher) {
     }, 450);
   });
 }
+
+// Nome de um ponto (para "Localização atual" e pino arrastado). Retorna texto ou null.
+async function nomeDoPonto(lat, lng) {
+  try {
+    const r = await fetch("https://photon.komoot.io/reverse?lat=" + lat + "&lon=" + lng);
+    const f = (await r.json()).features[0];
+    return f ? nomeEndereco(f.properties) : null;
+  } catch { return null; }
+}

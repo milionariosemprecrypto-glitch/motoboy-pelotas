@@ -40,6 +40,7 @@ td button.bloq { border-color:#ff3b30; color:#ff3b30; }
         <button id="abaM" class="active" onclick="aba('m')">Motoboys</button>
         <button id="abaC" onclick="aba('c')">Clientes</button>
         <button id="abaP" onclick="aba('p')">Pedidos</button>
+        <button id="abaR" onclick="aba('r')">Contestações <span id="qtdR"></span></button>
       </div>
       <div id="secM" class="card wrap">
         <h2>Motoboys <button class="link" style="display:inline" onclick="carregarMotoboys()">↻ atualizar</button></h2>
@@ -49,6 +50,13 @@ td button.bloq { border-color:#ff3b30; color:#ff3b30; }
         <h2>Clientes <button class="link" style="display:inline" onclick="carregarClientes()">↻ atualizar</button></h2>
         <table><thead><tr><th>Nome</th><th>E-mail</th><th>Telefone</th><th>Cadastro</th><th>Pedidos</th><th>Último pedido</th></tr></thead><tbody id="tbC"></tbody></table>
       </div>
+      <div id="secR" class="card wrap hidden">
+        <h2>Contestações <button class="link" style="display:inline" onclick="carregarContestacoes()">↻ atualizar</button></h2>
+        <p class="small">Responda em até 7 dias (Termos do Motoboy). "Deferir" reaprova o motoboy; "Indeferir" mantém a decisão. A resposta aparece no app dele.</p>
+        <table><thead><tr><th>Data</th><th>Motoboy</th><th>Status atual · motivo</th><th>Contestação</th><th>Situação</th><th>Ações</th></tr></thead><tbody id="tbR"></tbody></table>
+      </div>
+      <div id="historico" class="card hidden"><h2>Histórico de status — <span id="histNome"></span> <button class="link" style="display:inline" onclick="show('historico',false)">fechar ✕</button></h2>
+        <table><thead><tr><th>Data</th><th>De → Para</th><th>Motivo</th><th>Por</th></tr></thead><tbody id="tbH"></tbody></table></div>
       <div id="secP" class="card wrap hidden">
         <h2>Pedidos (últimos 200) <button class="link" style="display:inline" onclick="carregarPedidos()">↻ atualizar</button></h2>
         <table><thead><tr><th>Data</th><th>Cliente</th><th>Motoboy</th><th>Retirada → Entrega</th><th>km</th><th>Valor</th><th>Status</th></tr></thead><tbody id="tbP"></tbody></table>
@@ -61,15 +69,15 @@ td button.bloq { border-color:#ff3b30; color:#ff3b30; }
 <script src="../shared/auth.js"></script>
 <script>
 // Painel admin: o banco só responde se profiles.role = 'admin' (verificado nas RPCs e no RLS).
-iniciarAuth({ role: "cliente", aoEntrar: async (u) => {
+iniciarAuth({ role: "cliente", exigirAceite: false, aoEntrar: async (u) => {
   const { data } = await db.from("profiles").select("role").eq("id", u.id).maybeSingle();
   const admin = data && data.role === "admin";
   show("painel", admin); show("semAcesso", !admin);
-  if (admin) { carregarMotoboys(); carregarClientes(); carregarPedidos(); }
+  if (admin) { carregarMotoboys(); carregarClientes(); carregarPedidos(); carregarContestacoes(); }
 }});
 
 function aba(a) {
-  ["m", "c", "p"].forEach(x => { show("sec" + x.toUpperCase(), a === x); $("aba" + x.toUpperCase()).classList.toggle("active", a === x); });
+  ["m", "c", "p", "r"].forEach(x => { show("sec" + x.toUpperCase(), a === x); $("aba" + x.toUpperCase()).classList.toggle("active", a === x); });
 }
 async function carregarClientes() {
   const { data, error } = await db.rpc("admin_clientes");
@@ -99,29 +107,70 @@ async function carregarMotoboys() {
   data.forEach(m => {
     const tr = document.createElement("tr");
     tr.append(td((m.nome || "(sem nome)") + "\n" + (m.email || "") + "\n" + (m.telefone || "")),
-      td((m.cpf || "—") + " · " + (m.cnh || "—")), td((m.modelo || "—") + " · " + (m.placa || "—")));
+      td((m.cpf || "—") + " · CNH " + (m.cnh || "—") + " (" + (m.cnh_categoria || "?") + ")" +
+         "\nNasc.: " + d1(m.nascimento) + idade(m.nascimento) + "\n1ª hab.: " + d1(m.cnh_primeira_hab) + " · val.: " + d1(m.cnh_validade)),
+      td((m.modelo || "—") + " · " + (m.placa || "—")));
     const docs = document.createElement("td");
-    [["Foto", m.foto_path], ["CNH", m.doc_path]].forEach(([n, p]) => {
+    [["Foto", m.foto_path], ["CNH", m.doc_path], ["Curso", m.curso_path], ["Antecedentes", m.antecedentes_path]].forEach(([n, p]) => {
       if (!p) return; const b = document.createElement("button"); b.textContent = n; b.onclick = () => abrirDoc(p); docs.append(b);
     });
     if (!m.enviado_em) docs.textContent = "não enviou";
-    tr.append(docs, td(m.status + (m.online ? " · online" : ""), "st-" + m.status));
+    tr.append(docs, td(m.status + (m.online ? " · online" : "") + (m.status_motivo ? "\nMotivo: " + m.status_motivo : "") +
+      (m.contestacao_aberta ? "\n⚠ contestação aberta" : ""), "st-" + m.status));
     const acoes = document.createElement("td");
-    [["aprovado", "Aprovar", ""], ["bloqueado", "Bloquear", "bloq"], ["pendente", "Voltar p/ pendente", ""]].forEach(([s, n, c]) => {
+    [["aprovado", "Aprovar", ""], ["reprovado", "Reprovar", "bloq"], ["bloqueado", "Suspender", "bloq"], ["pendente", "Voltar p/ pendente", ""]].forEach(([s, n, c]) => {
       if (m.status === s) return;
       const b = document.createElement("button"); b.textContent = n; b.className = c;
       b.onclick = async () => {
-        if (!confirm(n + " " + (m.nome || m.email) + "?")) return;
-        const { error } = await db.rpc("definir_status_motoboy", { p_motoboy: m.id, p_status: s });
+        const motivo = prompt(n + " " + (m.nome || m.email) + "\n\nMotivo (obrigatório; o motoboy verá este texto):", s === "aprovado" ? "Documentos conferidos" : "");
+        if (motivo === null) return;
+        const { error } = await db.rpc("definir_status_motoboy", { p_motoboy: m.id, p_status: s, p_motivo: motivo });
         if (error) alert(erroMsg(error)); carregarMotoboys();
       };
       acoes.append(b);
     });
+    const h = document.createElement("button"); h.textContent = "Histórico"; h.onclick = () => verHistorico(m); acoes.append(h);
     tr.append(acoes);
     tr.style.whiteSpace = "pre-line";
     tb.append(tr);
   });
   if (!data.length) tb.innerHTML = '<tr><td colspan="6" class="small">Nenhum motoboy cadastrado.</td></tr>';
+}
+
+const d1 = d => d ? new Date(d + "T12:00:00").toLocaleDateString("pt-BR") : "—";
+const idade = d => d ? " (" + Math.floor((Date.now() - new Date(d + "T12:00:00")) / (365.25 * 864e5)) + " anos)" : "";
+async function verHistorico(m) {
+  const { data, error } = await db.rpc("admin_historico", { p_motoboy: m.id });
+  if (error) return alert(erroMsg(error));
+  $("histNome").textContent = m.nome || m.email; const tb = $("tbH"); tb.textContent = "";
+  data.forEach(h => { const tr = document.createElement("tr"); tr.append(td(dt(h.em)), td((h.de || "—") + " → " + h.para), td(h.motivo), td(h.admin)); tb.append(tr); });
+  if (!data.length) tb.innerHTML = '<tr><td colspan="4" class="small">Sem mudanças registradas.</td></tr>';
+  show("historico", true); $("historico").scrollIntoView({ behavior: "smooth" });
+}
+async function carregarContestacoes() {
+  const { data, error } = await db.rpc("admin_contestacoes");
+  const tb = $("tbR"); tb.textContent = "";
+  if (error) return alert(erroMsg(error));
+  const abertas = data.filter(c => c.situacao === "aberta").length;
+  $("qtdR").textContent = abertas ? "(" + abertas + ")" : "";
+  data.forEach(c => {
+    const tr = document.createElement("tr");
+    tr.append(td(dt(c.criado_em)), td((c.nome || "") + "\n" + (c.email || "")), td(c.status + "\n" + (c.motivo || "")), td(c.texto),
+      td(c.situacao + (c.resposta ? "\n" + c.resposta : ""), "st-" + c.situacao));
+    const a = document.createElement("td");
+    if (c.situacao === "aberta") [["deferida", "Deferir", ""], ["indeferida", "Indeferir", "bloq"]].forEach(([d, n, cl]) => {
+      const b = document.createElement("button"); b.textContent = n; b.className = cl;
+      b.onclick = async () => {
+        const r = prompt(n + " a contestação de " + (c.nome || c.email) + "\n\nResposta ao motoboy (obrigatória):");
+        if (r === null) return;
+        const { error } = await db.rpc("responder_contestacao", { p_id: c.id, p_decisao: d, p_resposta: r });
+        if (error) alert(erroMsg(error)); carregarContestacoes(); carregarMotoboys();
+      };
+      a.append(b);
+    });
+    tr.append(a); tr.style.whiteSpace = "pre-line"; tb.append(tr);
+  });
+  if (!data.length) tb.innerHTML = '<tr><td colspan="6" class="small">Nenhuma contestação.</td></tr>';
 }
 
 async function carregarPedidos() {

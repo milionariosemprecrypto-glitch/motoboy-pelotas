@@ -33,7 +33,6 @@
       <button id="authLink" class="link" type="button">Receber link de acesso por e-mail</button>
       <button id="authTroca" class="link" type="button"></button>
       <div id="authMsg" class="erro"></div>
-      <p class="legal">Ao continuar você aceita os <a href="https://milionariosemprecrypto-glitch.github.io/motoboy-pelotas/termos.html" target="_blank">Termos de Uso</a> e a <a href="https://milionariosemprecrypto-glitch.github.io/motoboy-pelotas/privacidade.html" target="_blank">Política de Privacidade</a>.</p>
     </div>
   </section>
   <section id="telaApp" class="hidden">
@@ -45,11 +44,22 @@
           <label for="cNome">Nome completo</label><input id="cNome" required maxlength="80">
           <label for="cTel">Celular (WhatsApp)</label><input id="cTel" required inputmode="tel" maxlength="20" placeholder="(53) 9 9999-9999">
           <label for="cCpf">CPF</label><input id="cCpf" required inputmode="numeric" maxlength="14" placeholder="Somente números">
+          <label for="cNasc">Data de nascimento</label><input id="cNasc" type="date" required>
+          <p class="small">Motofrete exige 21 anos ou mais (Lei 12.009/2009).</p>
           <label for="cCnh">Número da CNH</label><input id="cCnh" required maxlength="20">
+          <label for="cCat">Categoria da CNH</label>
+          <select id="cCat" required><option value="">Selecione</option><option>A</option><option>AB</option><option>AC</option><option>AD</option><option>AE</option><option>B</option></select>
+          <label for="cPrimHab">Data da 1ª habilitação na categoria A</label><input id="cPrimHab" type="date" required>
+          <p class="small">É preciso ter CNH categoria A há pelo menos 2 anos.</p>
+          <label for="cValidade">Validade da CNH</label><input id="cValidade" type="date" required>
           <label for="cPlaca">Placa da moto</label><input id="cPlaca" required maxlength="10" placeholder="ABC1D23">
           <label for="cModelo">Modelo da moto</label><input id="cModelo" required maxlength="60" placeholder="Ex.: Honda CG 160">
           <label for="cFoto">Sua foto (rosto)</label><input id="cFoto" type="file" accept="image/*" capture="user" required>
           <label for="cDoc">Foto da CNH</label><input id="cDoc" type="file" accept="image/*,application/pdf" required>
+          <label for="cCurso">Certificado do curso de motofrete (Res. CONTRAN)</label><input id="cCurso" type="file" accept="image/*,application/pdf" required>
+          <label for="cAnt">Certidão de antecedentes criminais (opcional)</label><input id="cAnt" type="file" accept="image/*,application/pdf">
+          <label class="aceite"><input type="checkbox" id="cAntConsent"><span>Autorizo o É-Já a tratar a certidão de antecedentes que enviei, apenas para verificar
+            a segurança da atividade de entrega, com acesso restrito e descarte do arquivo após a análise (LGPD art. 11, I). Posso revogar a qualquer momento.</span></label>
           <button id="cadBtn" class="primary" type="submit">Enviar cadastro</button>
           <div id="cadMsg" class="erro"></div>
         </form>
@@ -62,11 +72,24 @@
       <p class="small">Estamos conferindo seus documentos. Assim que for aprovado, você poderá ficar online e aceitar corridas.</p>
       <button class="secondary" onclick="carregar()">Verificar novamente</button>
       <button class="secondary" onclick="show('telaAguardando',false);show('telaCadastro',true)">Corrigir dados</button>
+      <button class="btn-perigo" onclick="excluirConta()">Excluir minha conta</button>
     </div>
 
     <div id="telaBloqueado" class="card hidden">
-      <h2>Cadastro bloqueado</h2>
-      <p class="small">Entre em contato com o suporte do É-Já.</p>
+      <span id="bloqTag" class="pill">Conta suspensa</span>
+      <h2 id="bloqTitulo" style="margin-top:14px">Cadastro bloqueado</h2>
+      <p class="small">Motivo informado pela equipe:</p>
+      <div id="bloqMotivo" class="status">—</div>
+      <p id="bloqData" class="small"></p>
+      <div id="contestacaoInfo" class="status hidden"></div>
+      <div id="contestarBox">
+        <label for="contestarTexto">Discorda? Explique e envie sua contestação (análise em até 7 dias)</label>
+        <textarea id="contestarTexto" maxlength="2000" rows="4" placeholder="Descreva o que aconteceu e, se for o caso, envie novos documentos em 'Corrigir dados'."></textarea>
+        <button id="btnContestar" class="primary" onclick="contestar()">Contestar</button>
+        <div id="contestarMsg" class="erro"></div>
+      </div>
+      <button id="btnCorrigirReprov" class="secondary hidden" onclick="show('telaBloqueado',false);show('telaCadastro',true)">Corrigir dados e reenviar</button>
+      <button class="btn-perigo" onclick="excluirConta()">Excluir minha conta</button>
     </div>
 
     <div id="telaTrabalho" class="hidden">
@@ -108,6 +131,9 @@
           <div id="ganhosLista"></div>
           <button class="secondary" onclick="motoAba('inicio')">Voltar ao mapa</button>
           <button class="link" onclick="db.auth.signOut()">Sair da conta</button>
+          <a class="link" href="https://eja-site.pages.dev/termos-motoboy/" target="_blank">Termos do Motoboy</a>
+          <a class="link" href="https://eja-site.pages.dev/privacidade/" target="_blank">Política de Privacidade</a>
+          <button class="btn-perigo" onclick="excluirConta()">Excluir minha conta</button>
         </div>
       </div>
     </div>

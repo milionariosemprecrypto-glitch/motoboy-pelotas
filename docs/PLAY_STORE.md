@@ -13,3 +13,10 @@
    e a notificação fixa "Compartilhando sua localização durante o trabalho".
 8. Exclusão de conta: a Play exige um link/forma de pedir exclusão de conta e dados (o e-mail da política serve no início; ideal é um botão no app).
 9. Para cada nova versão: aumentar `versionCode` e `versionName` em `apps/<app>/android/app/build.gradle`.
+
+## Compliance (v1.2 / versionCode 3)
+- **Política de privacidade (URL na Play Console):** https://eja-site.pages.dev/privacidade/
+- **Exclusão de conta (Data safety › "Delete account URL"):** https://eja-site.pages.dev/excluir-conta/ — também no app (Conta › Excluir minha conta; Motoboy: Menu › Excluir minha conta).
+- Termos: https://eja-site.pages.dev/termos/ (clientes) e https://eja-site.pages.dev/termos-motoboy/
+- Ao mudar um documento: publique a nova página e insira a nova versão em `documentos_legais` (doc, versao, url) — os apps pedem novo aceite automaticamente.
+- Regenerar as páginas do site: `python3 scripts/build-legal.py /workspace/eja-site`.

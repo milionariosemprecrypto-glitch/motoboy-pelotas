@@ -1,0 +1,47 @@
+<h1>Excluir minha conta do É-Já</h1>
+<p>Esta página vale para os apps <b>É-Já</b> (clientes) e <b>É-Já Motoboy</b>, publicados por [NOME/RAZÃO SOCIAL]. Você também pode excluir pelo próprio app: <b>Conta › Excluir minha conta</b> (cliente) ou <b>Menu › Excluir minha conta</b> (motoboy).</p>
+<h2>O que é apagado e o que é mantido</h2>
+<table><tr><th>Apagado na hora</th><th>Mantido (obrigação legal), sem identificar você</th></tr>
+<tr><td>Login (e-mail e senha), nome, telefone, endereços salvos, documentos e fotos do motoboy, localização (GPS), tokens de notificação, comentários de avaliações</td>
+<td>Pedidos concluídos com data, valor, km e status, <b>sem endereço e sem vínculo com você</b>, por 5 anos (obrigação fiscal); registro de que você aceitou os termos e pediu a exclusão (prova de cumprimento da LGPD)</td></tr></table>
+<p>Não é possível excluir com um pedido em andamento: conclua ou cancele o pedido antes.</p>
+<h2>Excluir agora</h2>
+<div class="box" id="passo1">
+  <p>Entre com o e-mail e a senha da sua conta para confirmar que é você.</p>
+  <label for="em">E-mail</label><input id="em" type="email" autocomplete="email">
+  <label for="se">Senha</label><input id="se" type="password" autocomplete="current-password">
+  <button class="btn p" id="entrar">Entrar</button> <span id="m1"></span>
+</div>
+<div class="box" id="passo2" hidden>
+  <p>Conectado como <b id="quem"></b>. Esta ação é <b>definitiva</b>. Para confirmar, digite <b>EXCLUIR</b>:</p>
+  <input id="conf" autocomplete="off" placeholder="EXCLUIR">
+  <button class="btn" id="excluir" disabled>Excluir minha conta definitivamente</button> <button class="btn p" id="cancelar">Cancelar</button>
+  <p id="m2"></p>
+</div>
+<h2>Sem acesso à conta?</h2>
+<p>Envie um e-mail para <b>[E-MAIL]</b> com o assunto “Excluir conta”, a partir do e-mail cadastrado. Confirmamos a identidade e concluímos em até <b>15 dias</b> (LGPD, art. 19). Por esse canal você também pode pedir acesso, correção ou portabilidade dos seus dados.</p>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+const URL_SB = "https://waalgvcywtfnrrpkrhti.supabase.co";
+const KEY = "sb_publishable_WyS8WAbEYuFRreO-1G32qA_ppERhliT";
+const db = supabase.createClient(URL_SB, KEY, { auth: { persistSession: false } });
+const $ = id => document.getElementById(id);
+$("entrar").onclick = async () => {
+  $("m1").textContent = "Entrando…"; $("m1").className = "";
+  const { data, error } = await db.auth.signInWithPassword({ email: $("em").value.trim(), password: $("se").value });
+  if (error) { $("m1").textContent = "E-mail ou senha incorretos."; $("m1").className = "erro"; return; }
+  $("quem").textContent = data.user.email; $("passo1").hidden = true; $("passo2").hidden = false; $("m1").textContent = "";
+};
+$("conf").oninput = () => $("excluir").disabled = $("conf").value.trim().toUpperCase() !== "EXCLUIR";
+$("cancelar").onclick = async () => { await db.auth.signOut(); location.reload(); };
+$("excluir").onclick = async () => {
+  $("excluir").disabled = true; $("m2").textContent = "Excluindo…"; $("m2").className = "";
+  const { data: s } = await db.auth.getSession();
+  const r = await fetch(URL_SB + "/functions/v1/excluir-conta", { method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: "Bearer " + s.session.access_token, apikey: KEY },
+    body: JSON.stringify({ confirmacao: "EXCLUIR", origem: "web" }) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) { $("m2").textContent = "Não foi possível excluir: " + (j.erro || r.status); $("m2").className = "erro"; $("excluir").disabled = false; return; }
+  $("m2").textContent = "Pronto: sua conta foi excluída."; $("m2").className = "ok"; $("passo2").querySelectorAll("input,button").forEach(e => e.disabled = true);
+};
+</script>

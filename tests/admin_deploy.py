@@ -35,7 +35,7 @@ try:
     with sync_playwright() as p:
         b = p.chromium.launch()
         def entrar(nome, w=1280, h=800):
-            pg = b.new_context(viewport={"width": w, "height": h}, device_scale_factor=1.5).new_page(); pg.on("dialog", lambda d: d.accept())
+            pg = b.new_context(viewport={"width": w, "height": h}, device_scale_factor=1.5).new_page(); pg.on("dialog", lambda d: d.accept("Teste automatizado de status") if d.type == "prompt" else d.accept())
             pg.goto(ADMIN_URL); pg.fill("#authEmail", U[nome][1]); pg.fill("#authSenha", pw); pg.click("#authBtn"); return pg
         c = entrar("cliente"); expect(c.locator("#semAcesso")).to_be_visible(timeout=15000); c.screenshot(path=f"{SH}/admin-negado.png"); print("✔ não-admin: 'Sem acesso'")
         a = entrar("admin")
@@ -44,7 +44,7 @@ try:
         with a.expect_popup() as pop: row.get_by_role("button", name="CNH").click()
         assert "token=" in pop.value.url; pop.value.close(); print("✔ admin abre documento (link assinado)")
         row.get_by_role("button", name="Aprovar").click(); expect(a.locator("#tbM tr", has_text=f"Teste moto {tag}").locator(".st-aprovado")).to_be_visible(timeout=10000); print("✔ aprovar")
-        a.locator("#tbM tr", has_text=f"Teste moto {tag}").get_by_role("button", name="Bloquear").click()
+        a.locator("#tbM tr", has_text=f"Teste moto {tag}").get_by_role("button", name="Suspender").click()
         expect(a.locator("#tbM tr", has_text=f"Teste moto {tag}").locator(".st-bloqueado")).to_be_visible(timeout=10000); print("✔ bloquear")
         a.click("#abaC"); expect(a.locator("#tbC tr", has_text=U["cliente"][1])).to_be_visible(timeout=10000); a.screenshot(path=f"{SH}/admin-clientes.png"); print("✔ admin lista clientes")
         a.click("#abaP"); expect(a.locator("#tbP tr").first).to_be_visible(timeout=10000); print("✔ admin lista pedidos")

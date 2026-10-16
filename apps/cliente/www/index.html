@@ -45,7 +45,6 @@
       <button id="authLink" class="link" type="button">Receber link de acesso por e-mail</button>
       <button id="authTroca" class="link" type="button"></button>
       <div id="authMsg" class="erro"></div>
-      <p class="legal">Ao continuar você aceita os <a href="https://milionariosemprecrypto-glitch.github.io/motoboy-pelotas/termos.html" target="_blank">Termos de Uso</a> e a <a href="https://milionariosemprecrypto-glitch.github.io/motoboy-pelotas/privacidade.html" target="_blank">Política de Privacidade</a>.</p>
     </div>
   </div>
 </section>
@@ -97,10 +96,12 @@
     <div class="lista">
       <button class="item-lista" onclick="definirLugar('casa')"><i>🏠</i><div><b>Casa</b><span id="contaCasa">Adicionar</span></div></button>
       <button class="item-lista" onclick="definirLugar('trabalho')"><i>💼</i><div><b>Trabalho</b><span id="contaTrabalho">Adicionar</span></div></button>
-      <a class="item-lista" href="https://milionariosemprecrypto-glitch.github.io/motoboy-pelotas/privacidade.html" target="_blank"><i>🔒</i><div><b>Privacidade</b><span>Como cuidamos dos seus dados</span></div></a>
-      <a class="item-lista" href="https://milionariosemprecrypto-glitch.github.io/motoboy-pelotas/termos.html" target="_blank"><i>📄</i><div><b>Termos de uso</b><span></span></div></a>
+      <a class="item-lista" href="https://eja-site.pages.dev/privacidade/" target="_blank"><i>🔒</i><div><b>Privacidade</b><span>Como cuidamos dos seus dados</span></div></a>
+      <a class="item-lista" href="https://eja-site.pages.dev/termos/" target="_blank"><i>📄</i><div><b>Termos de uso</b><span></span></div></a>
+      <a class="item-lista" href="https://eja-site.pages.dev/excluir-conta/" target="_blank"><i>❓</i><div><b>Ajuda e contato</b><span>Suporte, direitos LGPD</span></div></a>
       <button class="item-lista" onclick="db.auth.signOut()"><i>↩</i><div><b>Sair</b><span></span></div></button>
     </div>
+    <button id="btnExcluirConta" class="btn-perigo" onclick="excluirConta()">Excluir minha conta</button>
   </section>
 
   <nav class="nav-flutuante" id="navBar">

@@ -13,7 +13,7 @@ async function carregar() {
   const { data: p } = await db.from("profiles").select("nome, telefone").eq("id", usuario.id).maybeSingle();
   if (!m) { $("telaBloqueado").querySelector("p").textContent = "Esta conta é de cliente. Use o app É-Já."; show("telaBloqueado", true); return; }
   if (p) { $("cNome").value = p.nome || ""; $("cTel").value = p.telefone || ""; }
-  if (m.status === "bloqueado") show("telaBloqueado", true);
+  if (m.status === "bloqueado" || m.status === "reprovado") await mostrarSituacao(m.status);
   else if (m.status === "aprovado") {
     aprovado = true; show("telaTrabalho", true); iniciarMapa(); sincronizar(); carregarGanhos();
     iniciarPush("motoboy", d => { if (d.tipo === "nova_corrida" && !disponivel) alternarDisponibilidade(); else buscarOfertas(); });
@@ -37,13 +37,23 @@ $("cadForm").addEventListener("submit", async ev => {
   ev.preventDefault();
   const cpf = $("cCpf").value.replace(/\D/g, "");
   if (cpf.length !== 11) { $("cadMsg").textContent = "CPF deve ter 11 números."; return; }
+  const anos = d => (Date.now() - new Date(d + "T12:00:00")) / (365.25 * 864e5);
+  if (anos($("cNasc").value) < 21) { $("cadMsg").textContent = "Motofrete exige 21 anos ou mais (Lei 12.009/2009)."; return; }
+  if (!/A/.test($("cCat").value)) { $("cadMsg").textContent = "A CNH precisa ter categoria A."; return; }
+  if (anos($("cPrimHab").value) < 2) { $("cadMsg").textContent = "É preciso ter CNH categoria A há pelo menos 2 anos."; return; }
+  if (new Date($("cValidade").value + "T23:59:59") < new Date()) { $("cadMsg").textContent = "Sua CNH está vencida."; return; }
+  if ($("cAnt").files[0] && !$("cAntConsent").checked) { $("cadMsg").textContent = "Para enviar a certidão, marque a autorização."; return; }
   $("cadBtn").disabled = true; $("cadMsg").textContent = "Enviando…";
   try {
     const foto = await enviarArquivo($("cFoto"), "foto");
     const doc = await enviarArquivo($("cDoc"), "cnh");
+    const curso = await enviarArquivo($("cCurso"), "curso");
+    const ant = $("cAnt").files[0] ? await enviarArquivo($("cAnt"), "antecedentes") : null;
     const { error } = await db.rpc("enviar_cadastro_motoboy", {
       p_nome: $("cNome").value, p_telefone: $("cTel").value, p_cpf: cpf, p_cnh: $("cCnh").value,
-      p_placa: $("cPlaca").value, p_modelo: $("cModelo").value, p_foto_path: foto, p_doc_path: doc
+      p_placa: $("cPlaca").value, p_modelo: $("cModelo").value, p_foto_path: foto, p_doc_path: doc,
+      p_nascimento: $("cNasc").value, p_cnh_categoria: $("cCat").value, p_cnh_primeira_hab: $("cPrimHab").value,
+      p_cnh_validade: $("cValidade").value, p_curso_path: curso, p_antecedentes_path: ant, p_consentimento_antecedentes: $("cAntConsent").checked
     });
     if (error) throw error;
     $("cadMsg").textContent = "";
@@ -249,4 +259,32 @@ async function carregarGanhos() {
     const v = document.createElement("strong"); v.textContent = money(g.preco);
     linha.append(t, v); lista.append(linha);
   });
+}
+
+// ---------- Suspensão / reprovação: motivo e contestação (devido processo) ----------
+async function mostrarSituacao(status) {
+  const { data } = await db.rpc("minha_situacao");
+  const s = (data && data[0]) || {};
+  $("bloqTag").textContent = status === "reprovado" ? "Cadastro não aprovado" : "Conta suspensa";
+  $("bloqTitulo").textContent = status === "reprovado" ? "Seu cadastro não foi aprovado" : "Sua conta está suspensa";
+  $("bloqMotivo").textContent = s.motivo || "Motivo não informado. Use a contestação abaixo.";
+  $("bloqData").textContent = s.status_em ? "Decisão em " + new Date(s.status_em).toLocaleString("pt-BR") : "";
+  show("btnCorrigirReprov", status === "reprovado");
+  const aberta = s.contestacao_situacao === "aberta";
+  show("contestacaoInfo", !!s.contestacao_situacao);
+  if (s.contestacao_situacao) $("contestacaoInfo").textContent = aberta
+    ? "Sua contestação foi recebida em " + new Date(s.contestacao_em).toLocaleDateString("pt-BR") + " e está em análise (até 7 dias)."
+    : "Contestação " + s.contestacao_situacao + ": " + (s.contestacao_resposta || "");
+  show("contestarBox", !aberta);
+  show("telaBloqueado", true);
+}
+async function contestar() {
+  const t = $("contestarTexto").value.trim();
+  if (t.length < 10) { $("contestarMsg").textContent = "Escreva pelo menos 10 caracteres."; return; }
+  $("btnContestar").disabled = true;
+  const { error } = await db.rpc("contestar_status", { p_texto: t });
+  $("btnContestar").disabled = false;
+  if (error) { $("contestarMsg").textContent = erroMsg(error); return; }
+  $("contestarTexto").value = ""; $("contestarMsg").textContent = "";
+  carregar();
 }

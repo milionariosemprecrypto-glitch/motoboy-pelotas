@@ -18,17 +18,19 @@ ADM = {"apikey": SR, "Authorization": "Bearer " + SR}
 
 tag = uuid.uuid4().hex[:6]; senha = "Teste-" + uuid.uuid4().hex[:10]
 users = {}
-def criar(nome, role):
+def criar(nome, role, aceite=True):
     email = f"e2e-{nome}-{tag}@teste.local"
+    meta = {"role": role, "nome": "E2E " + nome}
+    if aceite: meta.update(aceite_termos="true", user_agent="e2e")
     u = api("POST", f"{URL}/auth/v1/admin/users", {"email": email, "password": senha, "email_confirm": True,
-            "user_metadata": {"role": role, "nome": "E2E " + nome}}, ADM)
+            "user_metadata": meta}, ADM)
     users[nome] = (u["id"], email)
 ok = []; 
 def passo(nome): print("✔", nome); ok.append(nome)
 
 srv = subprocess.Popen([sys.executable, "-m", "http.server", "8090", "-d", "apps"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 try:
-    criar("admin", "cliente"); criar("cliente", "cliente"); criar("moto", "motoboy")
+    criar("admin", "cliente"); criar("cliente", "cliente", aceite=False); criar("moto", "motoboy")
     sql(f"update profiles set role='admin' where id='{users['admin'][0]}'")
     open("/tmp/foto.png", "wb").write(bytes.fromhex("89504e470d0a1a0a0000000d4948445200000001000000010806000000"
         "1f15c4890000000d49444154789c6360000002000154a24f5d0000000049454e44ae426082"))
@@ -45,18 +47,33 @@ try:
             pg.fill("#authEmail", users[nome][1]); pg.fill("#authSenha", senha); pg.click("#authBtn")
         cm, cc, ca = ctx(), ctx(), ctx()
         moto, cli, adm = cm.new_page(), cc.new_page(), ca.new_page()
-        for pg in (moto, cli, adm): pg.on("dialog", lambda d: d.accept())
+        resposta = {"txt": ""}   # texto digitado nos prompt() (motivo, EXCLUIR…)
+        for pg in (moto, cli, adm): pg.on("dialog", lambda d: d.accept(resposta["txt"]) if d.type == "prompt" else d.accept())
 
         # 1. Motoboy se cadastra com documentos
         moto.goto("http://localhost:8090/motoboy/www/"); expect(moto.locator("#telaAuth")).to_be_visible(timeout=15000); shot(moto, "motoboy-01-login")
         cli.goto("http://localhost:8090/cliente/www/"); expect(cli.locator("#telaOnboarding")).to_be_visible(timeout=15000); shot(cli, "cliente-00-boasvindas")
         cli.click("#obPular"); expect(cli.locator("#telaAuth")).to_be_visible(timeout=15000); shot(cli, "cliente-01-login")
+        # Aceite (clickwrap): checkbox não marcado bloqueia o cadastro
+        cli.click("#authTroca"); expect(cli.locator("#campoAceite")).to_be_visible()
+        assert not cli.is_checked("#aceiteTermos") and cli.is_disabled("#authBtn")
+        assert cli.get_attribute("#campoAceite a >> nth=0", "href").endswith("/termos/") and cli.get_attribute("#campoAceite a >> nth=1", "href").endswith("/privacidade/")
+        cli.check("#aceiteTermos"); assert cli.is_enabled("#authBtn"); shot(cli, "cliente-00b-cadastro-aceite")
+        cli.uncheck("#aceiteTermos"); assert cli.is_disabled("#authBtn"); cli.click("#authTroca")
+        passo("cadastro exige checkbox de aceite (links separados Termos/Política)")
         login(moto, "motoboy/www/", "moto")
         expect(moto.locator("#telaCadastro")).to_be_visible(timeout=15000)
         shot(moto, "motoboy-02-cadastro")
         moto.fill("#cNome", "E2E Moto"); moto.fill("#cTel", "53999990000"); moto.fill("#cCpf", "52998224725")
         moto.fill("#cCnh", "12345678900"); moto.fill("#cPlaca", "IXA1B23"); moto.fill("#cModelo", "Honda CG 160")
-        moto.set_input_files("#cFoto", "/tmp/foto.png"); moto.set_input_files("#cDoc", "/tmp/foto.png")
+        moto.fill("#cNasc", "2008-01-01"); moto.select_option("#cCat", "A"); moto.fill("#cPrimHab", "2015-03-10"); moto.fill("#cValidade", "2030-01-01")
+        moto.set_input_files("#cFoto", "/tmp/foto.png"); moto.set_input_files("#cDoc", "/tmp/foto.png"); moto.set_input_files("#cCurso", "/tmp/foto.png")
+        moto.click("#cadBtn"); expect(moto.locator("#cadMsg")).to_contain_text("21 anos"); passo("cadastro recusa menor de 21 anos")
+        moto.fill("#cNasc", "1990-05-20"); moto.fill("#cPrimHab", "2025-06-01")
+        moto.click("#cadBtn"); expect(moto.locator("#cadMsg")).to_contain_text("2 anos"); passo("cadastro recusa CNH A com menos de 2 anos")
+        moto.fill("#cPrimHab", "2015-03-10"); moto.set_input_files("#cAnt", "/tmp/foto.png")
+        moto.click("#cadBtn"); expect(moto.locator("#cadMsg")).to_contain_text("autorização"); passo("certidão de antecedentes exige consentimento")
+        moto.check("#cAntConsent")
         moto.click("#cadBtn")
         expect(moto.locator("#telaAguardando")).to_be_visible(timeout=20000); passo("motoboy envia cadastro e fica aguardando aprovação")
         expect(moto.locator("#motoBar")).to_be_hidden(); passo("motoboy pendente não vê botão 'Ficar online'")
@@ -68,8 +85,33 @@ try:
         with adm.expect_popup() as pop: row.get_by_role("button", name="CNH").click()
         assert "token=" in pop.value.url; pop.value.close(); passo("admin abre documento (URL assinada do bucket privado)")
         shot(adm, "admin-motoboys")
+        for nome in ("Curso", "Antecedentes"): expect(row.get_by_role("button", name=nome)).to_be_visible()
+        expect(row).to_contain_text("(A)"); passo("admin vê curso, antecedentes, categoria e datas da CNH")
+        resposta["txt"] = "Documentos conferidos"
         row.get_by_role("button", name="Aprovar").click()
-        expect(adm.locator("#tbM tr", has_text="E2E Moto").locator(".st-aprovado")).to_be_visible(timeout=10000); passo("admin aprova motoboy")
+        expect(adm.locator("#tbM tr", has_text="E2E Moto").locator(".st-aprovado")).to_be_visible(timeout=10000); passo("admin aprova motoboy (com motivo)")
+
+        # 2b. Suspensão com motivo + contestação (devido processo)
+        resposta["txt"] = ""
+        adm.locator("#tbM tr", has_text="E2E Moto").get_by_role("button", name="Suspender").click(); adm.wait_for_timeout(1500)
+        expect(adm.locator("#tbM tr", has_text="E2E Moto").locator(".st-aprovado")).to_be_visible(); passo("suspensão sem motivo é recusada")
+        resposta["txt"] = "Placa da moto não confere com o documento enviado"
+        adm.locator("#tbM tr", has_text="E2E Moto").get_by_role("button", name="Suspender").click()
+        expect(adm.locator("#tbM tr", has_text="E2E Moto").locator(".st-bloqueado")).to_be_visible(timeout=10000); passo("admin suspende com motivo")
+        moto.reload(); expect(moto.locator("#telaBloqueado")).to_be_visible(timeout=15000)
+        expect(moto.locator("#bloqMotivo")).to_contain_text("Placa da moto"); passo("motoboy vê o motivo da suspensão")
+        moto.fill("#contestarTexto", "A placa foi trocada, envio o CRLV novo em anexo."); shot(moto, "motoboy-07-suspenso-contestar")
+        moto.click("#btnContestar"); expect(moto.locator("#contestacaoInfo")).to_contain_text("em análise", timeout=10000); passo("motoboy contesta (fica registrado)")
+        adm.click("#abaR"); adm.click("#secR button.link")
+        crow = adm.locator("#tbR tr", has_text="E2E Moto"); expect(crow).to_contain_text("CRLV novo", timeout=10000); passo("admin vê a contestação")
+        shot(adm, "admin-contestacoes")
+        adm.click("#abaM"); adm.locator("#tbM tr", has_text="E2E Moto").get_by_role("button", name="Histórico").click()
+        expect(adm.locator("#tbH tr")).to_have_count(2, timeout=10000); passo("admin vê o histórico de status com motivos")
+        adm.click("#abaR")
+        resposta["txt"] = "CRLV conferido, placa correta"
+        crow.get_by_role("button", name="Deferir", exact=True).click()
+        expect(adm.locator("#tbR tr", has_text="E2E Moto")).to_contain_text("deferida", timeout=10000); passo("admin defere a contestação e reaprova")
+        adm.click("#abaM")
 
         # 3. Cliente comum não acessa admin
         cli.goto("http://localhost:8090/admin/"); cli.fill("#authEmail", users["cliente"][1]); cli.fill("#authSenha", senha); cli.click("#authBtn")
@@ -84,6 +126,10 @@ try:
 
         # 5. Cliente pede com autocomplete + rota
         login(cli, "cliente/www/", "cliente")
+        expect(cli.locator("#modalAceite")).to_be_visible(timeout=15000); assert cli.is_disabled("#aceiteOk")
+        cli.check("#aceiteNovo"); cli.click("#aceiteOk"); expect(cli.locator("#modalAceite")).to_be_hidden(timeout=10000)
+        ac = sql(f"select count(*) c, count(ip) ips, count(user_agent) uas from aceites_termos where user_id='{users['cliente'][0]}'")[0]
+        assert ac["c"] == 2 and ac["uas"] == 2, ac; print("   aceites:", ac); passo("pede aceite pendente no login e grava (versão, data, UA, IP)")
         expect(cli.locator("#home")).to_be_visible(timeout=15000); shot(cli, "cliente-01b-inicio"); passo("cliente vê a tela inicial")
         cli.click("#pillParaOnde"); expect(cli.locator("#telaPlano")).to_be_visible(); shot(cli, "cliente-01c-plano")
         cli.fill("#origem", "Rua Quinze de Novembro"); cli.locator("#sugOrigem .sugestao").first.click(timeout=20000)
@@ -123,6 +169,14 @@ try:
         adm.click("#abaP"); adm.click("#secP button.link")
         expect(adm.locator("#tbP tr", has_text="entregue").first).to_be_visible(timeout=10000); passo("admin vê pedidos")
         shot(adm, "admin-pedidos")
+
+        # 9. Cliente exclui a conta pelo app (pedido fica anonimizado)
+        cli.click("#navConta"); expect(cli.locator("#btnExcluirConta")).to_be_visible(); shot(cli, "cliente-06-conta-excluir")
+        resposta["txt"] = "EXCLUIR"; cli.click("#btnExcluirConta")
+        expect(cli.locator("#telaAuth, #telaOnboarding").first).to_be_visible(timeout=20000)
+        cid = users.pop("cliente")[0]
+        r = sql(f"select (select count(*) from auth.users where id='{cid}') u, (select count(*) from profiles where id='{cid}') p, (select count(*) from pedidos where cliente_id is null and motoboy_id='{users['moto'][0]}' and retirada like '%removido%' and status='entregue') ped")[0]
+        assert r == {"u": 0, "p": 0, "ped": 1}, r; passo("cliente exclui a conta: login e perfil apagados, pedido anonimizado mantido")
         b.close()
     print(f"\nTODOS OS {len(ok)} PASSOS OK")
 finally:

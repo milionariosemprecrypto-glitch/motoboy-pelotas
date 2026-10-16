@@ -32,10 +32,10 @@ h1 em, .laranja { color:var(--primary); font-style:inherit; }
 .card { background:var(--card); border:1px solid var(--border); border-radius:18px; padding:18px; margin-bottom:15px; }
 .card h2 { font-size:18px; margin:0 0 14px; font-weight:700; }
 label { display:block; font-size:12px; font-weight:600; margin:14px 0 6px; color:var(--muted); text-transform:uppercase; letter-spacing:.6px; }
-input, select { display:block; width:100%; border:1px solid var(--border); border-radius:12px; padding:14px 13px; background:var(--card2);
+input, select, textarea { display:block; width:100%; border:1px solid var(--border); border-radius:12px; padding:14px 13px; background:var(--card2);
   color:var(--text); font:inherit; font-size:15px; }
 input::placeholder { color:#666; }
-input:focus, select:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 3px #ff6a0033; }
+input:focus, select:focus, textarea:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 3px #ff6a0033; }
 input[type=file] { padding:10px; font-size:13px; }
 input[type=file]::file-selector-button { background:var(--primary); color:#0b0b0b; border:0; border-radius:8px; padding:8px 12px; font-weight:700; margin-right:10px; }
 
@@ -148,3 +148,13 @@ body.modo-mapa main { max-width:none; padding:0; }
 @keyframes piscar { 50% { opacity:.2; } }
 #telaTrabalho:not(.hidden) { display:block; min-height:100vh; }
 body.em-corrida .fab-ganhos { display:none; }
+
+/* Aceite dos termos + modal */
+.aceite { display:flex !important; gap:10px; align-items:flex-start; text-transform:none !important; letter-spacing:0 !important; font-size:13px !important; font-weight:400 !important; line-height:1.45; margin:16px 0 4px !important; cursor:pointer; }
+.aceite input { width:20px; height:20px; flex:none; margin:1px 0 0; accent-color:#ff6a00; padding:0; }
+.aceite a { color:var(--primary); font-weight:600; }
+.modal-aceite { position:fixed; inset:0; z-index:9000; background:#000a; display:grid; place-items:center; padding:20px; }
+.modal-caixa { background:var(--card); color:var(--text); border-radius:18px; padding:22px; max-width:420px; width:100%; }
+.modal-caixa ul { margin:10px 0; padding-left:18px; line-height:1.9; } .modal-caixa a { color:var(--primary); font-weight:600; }
+.tema-claro .modal-caixa { background:#fff; color:#111; }
+.btn-perigo { width:100%; background:transparent; color:#d92d20; border:1px solid #d92d2066; border-radius:12px; padding:13px; margin-top:12px; font:600 14px Poppins, sans-serif; cursor:pointer; }

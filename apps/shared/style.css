@@ -109,6 +109,7 @@ footer { text-align:center; padding:10px 20px 28px; color:#555; font-size:11px; 
 #mapa, #mapaPedido { border:0 !important; box-shadow:0 4px 18px #0006; }
 
 /* ===== Tela de trabalho do motoboy (estilo app de motorista) ===== */
+body.modo-mapa { overflow:hidden; height:100dvh; }
 body.modo-mapa header, body.modo-mapa footer { display:none; }
 body.modo-mapa main { max-width:none; padding:0; }
 .mapa-full, .mapa-cheio { position:fixed !important; inset:0; width:100% !important; height:100dvh !important; min-height:100dvh;
@@ -119,7 +120,11 @@ body.modo-mapa::before { content:""; position:fixed; z-index:1690; left:0; right
   box-shadow:0 3px 12px #0003; display:grid; place-items:center; cursor:pointer; }
 .fab svg, .icone-btn svg { width:22px; height:22px; fill:none; stroke:currentColor; stroke-width:2.2; stroke-linecap:round; }
 .fab-tl { top:calc(16px + var(--safe-top)); left:calc(16px + var(--safe-left)); }
-.fab-tr { top:calc(16px + var(--safe-top)); right:calc(16px + var(--safe-right)); }
+.fab-tr { top:calc(16px + var(--safe-top)); right:calc(16px + var(--safe-right)); display:none; }
+.fab-bussola { top:calc(74px + var(--safe-top)); left:calc(16px + var(--safe-left)); font:800 18px Poppins, sans-serif; }
+.fab-bussola.norte { color:#ff6a00; }
+body.mapa-livre .fab-tr { display:grid; }
+body.em-corrida .fab-bussola { top:auto; left:auto; right:calc(16px + var(--safe-right)); bottom:calc(var(--folha-altura, 200px) + 16px); }
 .fab-ganhos { right:calc(16px + var(--safe-right)); bottom:calc(var(--folha-altura, 210px) + 16px); }
 .pill-ganhos { position:fixed; z-index:1700; top:calc(16px + var(--safe-top)); left:50%; transform:translateX(-50%);
   background:#0b0b0b; color:#fff; border:0; border-radius:30px; padding:10px 22px; font:700 22px Poppins, sans-serif;
@@ -160,7 +165,28 @@ body.modo-mapa::before { content:""; position:fixed; z-index:1690; left:0; right
 .oferta-topo { display:flex; align-items:center; gap:10px; }
 .pulso { width:10px; height:10px; border-radius:50%; background:#ff6a00; animation:piscar 1s infinite; }
 @keyframes piscar { 50% { opacity:.2; } }
-#telaTrabalho:not(.hidden) { display:block; min-height:100vh; }
+#telaTrabalho:not(.hidden) { display:block; min-height:100dvh; height:100dvh; overflow:hidden; pointer-events:none; }
+#telaTrabalho .eja-mapa, #telaTrabalho .maplibregl-canvas, #telaTrabalho .leaflet-container { pointer-events:auto; }
+#telaTrabalho .painel, #telaTrabalho .fab, #telaTrabalho .nav-banner, #telaTrabalho .nav-eta,
+#telaTrabalho .pill-ganhos { pointer-events:auto; }
+#telaTrabalho #motoBar { pointer-events:none; }
+#telaTrabalho #motoBar button, #telaTrabalho #motoBar .rotulo-redondo { pointer-events:auto; }
+.sheet { pointer-events:auto; }
+.maplibregl-map, .maplibregl-canvas { touch-action:none; }
+.eja-marcador { background:none !important; border:0 !important; }
+.uber-pickup, .uber-drop { position:relative; width:18px; height:18px; }
+.uber-pickup .pin-a, .uber-drop .pin-b { position:absolute; left:0; top:0; width:18px; height:18px; background:#111; border:0; box-shadow:0 2px 6px #0005; }
+.uber-pickup .pin-a { border-radius:50%; }
+.uber-drop .pin-b { border-radius:3px; }
+.uber-halo { position:absolute; left:-16px; top:-16px; width:50px; height:50px; border-radius:50%; background:#c5cad1; opacity:.55; animation:halo 1.8s ease-out infinite; pointer-events:none; }
+@keyframes halo { 0% { transform:scale(.55); opacity:.55; } 100% { transform:scale(1.35); opacity:0; } }
+.uber-balao { position:absolute; left:50%; bottom:26px; transform:translateX(-50%); background:#fff; color:#111; border-radius:12px;
+  padding:7px 8px 7px 10px; display:flex; align-items:center; gap:8px; box-shadow:0 4px 16px #0003; white-space:nowrap; max-width:210px; pointer-events:none; }
+.uber-balao span { font:600 12px Poppins, sans-serif; overflow:hidden; text-overflow:ellipsis; max-width:130px; }
+.eta-badge { background:#111; color:#fff; border-radius:8px; padding:4px 6px; font:800 11px Poppins, sans-serif; letter-spacing:.4px; }
+.seta-moto, .seta-moto.pin-moto { width:48px; height:48px; border-radius:50%; background:#1c1c1c; display:grid; place-items:center;
+  box-shadow:0 5px 16px #0006; transform:none; animation:none; color:#fff; font-size:0; }
+.seta-moto span { display:block; width:0; height:0; border-left:7px solid transparent; border-right:7px solid transparent; border-bottom:16px solid #fff; margin-top:-4px; transform-origin:50% 60%; }
 body.em-corrida .fab-ganhos, body.em-corrida .pill-ganhos { display:none; }
 .folha-miolo { overflow:auto; flex:1 1 auto; min-height:0; -webkit-overflow-scrolling:touch; overscroll-behavior:contain; }
 .folha[data-snap="colapsada"] .folha-extra, .painel[data-snap="colapsada"] .folha-extra { display:none !important; }
@@ -187,7 +213,7 @@ body.em-corrida .painel[data-snap="colapsada"] #motoStatus { display:none; }
 .nav-voz { flex:none; background:#fff; color:#111; border:0; border-radius:10px; padding:8px 10px; font:700 12px Poppins, sans-serif; cursor:pointer; }
 .nav-eta { position:fixed; z-index:1800; top:auto; bottom:calc(var(--folha-altura, 200px) + 12px); left:calc(12px + var(--safe-left)); background:#fff; color:#111;
   border-radius:12px; padding:8px 12px; box-shadow:0 4px 14px #0003; font-size:13px; display:flex; gap:8px; align-items:baseline; }
-body.em-corrida .fab-tr { top:auto; bottom:calc(var(--folha-altura, 200px) + 58px); }
+body.em-corrida .fab-tr { top:auto; bottom:calc(var(--folha-altura, 200px) + 72px); }
 .nav-eta b { font-size:16px; }
 .nav-ext { display:flex; gap:8px; }
 .nav-ext button { flex:1; margin-top:10px; }

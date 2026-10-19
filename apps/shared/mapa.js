@@ -2,8 +2,8 @@
 // dentro do Leaflet. Se não houver WebGL ou o OpenFreeMap falhar, cai para o OSM raster "suavizado" por CSS.
 const ESTILO_URL = "https://tiles.openfreemap.org/styles/positron";
 const PALETA = {
-  terra: "#e9eef3", parque: "#dde9df", agua: "#c6dbec", residencial: "#e5eaf0", predio: "#dce3ea",
-  rua: "#ffffff", ruaBorda: "#d4dce5", texto: "#6b7785", textoForte: "#4a5563", halo: "#f4f7fa"
+  terra: "#eceff3", parque: "#e3ebe4", agua: "#d5e3ee", residencial: "#e7ebf0", predio: "#e0e5eb",
+  rua: "#fbfcfd", ruaBorda: "#d7dee6", texto: "#8b95a1", textoForte: "#5c6773", halo: "#f4f6f8"
 };
 let estiloCache = null;
 
@@ -23,7 +23,10 @@ async function estiloSuave() {
     else if (l.type === "line" && /highway|road|tunnel/.test(id)) { pinta(l, "line-color", PALETA.rua); pinta(l, "line-opacity", 1); }
     else if (l.type === "line" && /railway/.test(id)) pinta(l, "line-color", "#d9e0e8");
     else if (l.type === "line" && /boundary/.test(id)) pinta(l, "line-color", "#c5ced8");
-    else if (l.type === "symbol" && l.paint && "text-color" in l.paint) {
+    else if (l.type === "symbol" && /poi|housenum|mountain|airport|rail|oneway|entrance/.test(id)) {
+      l.layout = l.layout || {};
+      l.layout.visibility = "none";
+    } else if (l.type === "symbol" && l.paint && "text-color" in l.paint) {
       pinta(l, "text-color", /city|town|village/.test(id) ? PALETA.textoForte : PALETA.texto);
       pinta(l, "text-halo-color", PALETA.halo);
     }
@@ -36,42 +39,56 @@ function temWebGL() {
 }
 
 
-// Marcadores no estilo do app
-const icone = {
-  moto: () => L.divIcon({ className: "", html: '<div class="pin-moto">➤</div>', iconSize: [40, 40], iconAnchor: [20, 20] }),
-  retirada: () => L.divIcon({ className: "", html: '<div class="pin pin-a">A</div>', iconSize: [30, 30], iconAnchor: [15, 15] }),
-  entrega: () => L.divIcon({ className: "", html: '<div class="pin pin-b">B</div>', iconSize: [30, 30], iconAnchor: [15, 15] })
-};
-const ROTA = { color: "#111111", weight: 5, opacity: .9 };
+// Rota preta grossa, pontas e emendas arredondadas, para aparecer no mapa apagado.
+const ROTA = { color: "#111111", weight: 7, opacity: 1 };
 
-// Recalcula o tamanho do mapa (use depois de mostrar uma tela que estava escondida).
-// Graus no sentido horário a partir do norte. O ícone ➤ aponta para a direita, então subtrai 90.
-function orientarMarcador(marker, graus) {
+function escHtml(s) {
+  return String(s || "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+function nomeCurto(nome) {
+  return escHtml(String(nome || "Pelotas").split("·")[0].trim());
+}
+function htmlRetirada(nome, eta) {
+  const badge = eta ? '<b class="eta-badge">' + escHtml(eta) + " MIN</b>" : "";
+  return '<div class="uber-pickup"><div class="uber-balao"><span>' + nomeCurto(nome) + "</span>" + badge +
+    '</div><div class="uber-halo"></div><i class="pin-a"></i></div>';
+}
+function htmlEntrega(nome) {
+  return '<div class="uber-drop"><div class="uber-balao"><span>' + nomeCurto(nome) + '</span></div><i class="pin-b"></i></div>';
+}
+function htmlMoto() {
+  return '<div class="seta-moto pin-moto"><span></span></div>';
+}
+function htmlAlvo(coleta) {
+  return coleta ? '<div class="uber-pickup"><div class="uber-halo"></div><i class="pin-a"></i></div>'
+    : '<div class="uber-drop"><i class="pin-b"></i></div>';
+}
+
+// A seta aponta para o norte em 0°. No modo "sentido da moto" o mapa já girou, então a seta fica em pé.
+function orientarMarcador(marker, graus, bearingMapa) {
   if (!marker || graus == null || Number.isNaN(graus)) return;
   const el = marker.getElement && marker.getElement();
-  const pin = el && el.querySelector(".pin-moto");
-  if (pin) pin.style.transform = "rotate(" + (graus - 90) + "deg)";
+  const seta = el && el.querySelector(".seta-moto span");
+  if (!seta) return;
+  const rel = graus - (bearingMapa || 0);
+  seta.style.transform = "rotate(" + rel + "deg)";
 }
 
 function ajustarMapa(m) {
   if (!m) return;
-  m.invalidateSize();
-  if (m._gl) { try { m._gl.getMaplibreMap().resize(); m._gl._update(); } catch (e) {} }
+  if (m.invalidateSize) m.invalidateSize();
+  if (m.resize) m.resize();
 }
 
 const mapasVivos = new Set();
 function criarMapa(id, opcoes = {}) {
-  const m = L.map(id, { zoomControl: false, attributionControl: true, ...opcoes }).setView(PELOTAS, 14);
-  m.attributionControl.setPrefix(false);
-  const raster = () => L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",
-    { maxZoom: 19, className: "tiles-suaves", attribution: "© OpenStreetMap" }).addTo(m);
-  if (window.maplibregl && L.maplibreGL && temWebGL()) {
-    estiloSuave()
-      .then(style => { m._gl = L.maplibreGL({ style, attribution: '© <a href="https://openfreemap.org">OpenFreeMap</a> © OpenStreetMap' }).addTo(m); })
-      .catch(raster);
-  } else raster();
+  let m;
+  try {
+    if (window.maplibregl && temWebGL()) m = criarMapaGL(id, opcoes);
+  } catch (e) { m = null; }
+  if (!m) m = criarMapaLeaflet(id, opcoes);
   mapasVivos.add(m);
-  setTimeout(() => ajustarMapa(m), 80);
+  setTimeout(() => ajustarMapa(m), 60);
   return m;
 }
 
@@ -82,6 +99,208 @@ window.addEventListener("resize", redimensionarMapas);
 window.addEventListener("orientationchange", () => setTimeout(redimensionarMapas, 180));
 window.addEventListener("eja-insets", redimensionarMapas);
 if (window.visualViewport) window.visualViewport.addEventListener("resize", redimensionarMapas);
+
+function ouvintes(alvo) {
+  const mapa = {};
+  alvo.on = function (ev, fn) {
+    (mapa[ev] = mapa[ev] || []).push(fn);
+    return alvo;
+  };
+  alvo._emitir = function (ev) {
+    (mapa[ev] || []).forEach(fn => { try { fn(); } catch (e) {} });
+  };
+  return alvo;
+}
+
+function caixaDe(pts) {
+  let s = 90, n = -90, o = 180, l = -180;
+  (pts || []).forEach(p => {
+    const lat = Array.isArray(p) ? +p[0] : +p.lat;
+    const lng = Array.isArray(p) ? +p[1] : +p.lng;
+    if (!isFinite(lat) || !isFinite(lng)) return;
+    s = Math.min(s, lat); n = Math.max(n, lat); o = Math.min(o, lng); l = Math.max(l, lng);
+  });
+  const caixa = {
+    s, n, o, l,
+    pad(f) {
+      const dy = (n - s) * f, dx = (l - o) * f;
+      return caixaDe([[s - dy, o - dx], [n + dy, l + dx]]);
+    },
+    contains(ll) {
+      const lat = Array.isArray(ll) ? +ll[0] : +ll.lat;
+      const lng = Array.isArray(ll) ? +ll[1] : +ll.lng;
+      return lat >= s && lat <= n && lng >= o && lng <= l;
+    }
+  };
+  return caixa;
+}
+
+function criarMapaGL(id, opcoes) {
+  const el = typeof id === "string" ? document.getElementById(id) : id;
+  if (!el) return null;
+  el.classList.add("eja-mapa");
+  const pitch = opcoes.pitch || 0;
+  const gl = new maplibregl.Map({
+    container: el,
+    style: { version: 8, sources: {}, layers: [{ id: "fundo", type: "background", paint: { "background-color": PALETA.terra } }] },
+    center: [PELOTAS[1], PELOTAS[0]],
+    zoom: opcoes.zoom || 14,
+    pitch, bearing: 0, maxPitch: 65,
+    attributionControl: true,
+    dragPan: true, dragRotate: true, touchZoomRotate: true, touchPitch: pitch > 0,
+    pitchWithRotate: false, doubleClickZoom: true, scrollZoom: true, cooperativeGestures: false
+  });
+  const fila = [];
+  let estiloPronto = false;
+  function quandoPronto(fn) { if (estiloPronto) fn(); else fila.push(fn); }
+  estiloSuave().then(style => {
+    gl.setStyle(style);
+    gl.once("style.load", () => { estiloPronto = true; fila.splice(0).forEach(fn => fn()); });
+  }).catch(() => {
+    gl.setStyle({
+      version: 8,
+      sources: { osm: { type: "raster", tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"], tileSize: 256, attribution: "© OpenStreetMap" } },
+      layers: [{ id: "osm", type: "raster", source: "osm" }]
+    });
+    gl.once("style.load", () => { estiloPronto = true; fila.splice(0).forEach(fn => fn()); });
+  });
+  const api = ouvintes({
+    gl, _eja: "gl",
+    getContainer: () => el,
+    getZoom: () => gl.getZoom(),
+    getPitch: () => gl.getPitch(),
+    getBearing: () => gl.getBearing(),
+    getCenter: () => { const c = gl.getCenter(); return { lat: c.lat, lng: c.lng }; },
+    getBounds: () => { const b = gl.getBounds(); return caixaDe([[b.getSouth(), b.getWest()], [b.getNorth(), b.getEast()]]); },
+    resize() { gl.resize(); },
+    invalidateSize() { gl.resize(); },
+    setView(ll, zoom) { gl.jumpTo({ center: [ll[1], ll[0]], zoom: zoom == null ? gl.getZoom() : zoom, pitch: gl.getPitch() }); return api; },
+    panTo(ll) { gl.easeTo({ center: [ll[1], ll[0]], duration: 500 }); return api; },
+    easePara(o) {
+      const alvo = {
+        center: [o.lng, o.lat],
+        zoom: o.zoom == null ? gl.getZoom() : o.zoom,
+        bearing: o.bearing == null ? gl.getBearing() : o.bearing,
+        pitch: o.pitch == null ? gl.getPitch() : o.pitch,
+        duration: o.duration == null ? 700 : o.duration,
+        essential: false
+      };
+      if (o.padding) alvo.padding = o.padding;
+      gl.easeTo(alvo);
+    },
+    project(ll) { return gl.project([ll[1], ll[0]]); },
+    containerPointToLatLng(pt) { const p = gl.unproject(pt); return { lat: p.lat, lng: p.lng }; },
+    enquadrar(pts, pad, duracao) {
+      if (!pts || pts.length < 2) {
+        if (pts && pts[0]) api.setView(pts[0], Math.min(16, gl.getZoom() || 15));
+        return;
+      }
+      const b = caixaDe(pts);
+      gl.fitBounds([[b.o, b.s], [b.l, b.n]], {
+        padding: pad, maxZoom: 16, duration: duracao == null ? 650 : duracao, linear: false,
+        pitch: gl.getPitch(), bearing: gl.getBearing()
+      });
+    },
+    marcador(ll, html) {
+      const node = document.createElement("div");
+      node.className = "eja-marcador";
+      node.innerHTML = html;
+      const mk = new maplibregl.Marker({ element: node, anchor: "center" }).setLngLat([ll[1], ll[0]]).addTo(gl);
+      return {
+        addTo() { return this; },
+        remove() { mk.remove(); },
+        getElement() { return node; },
+        setLatLng(p) { mk.setLngLat([p[1], p[0]]); }
+      };
+    },
+    linha(pts, estilo) {
+      const id = "rota-" + Math.random().toString(36).slice(2, 8);
+      const dados = () => ({ type: "Feature", geometry: { type: "LineString", coordinates: (pts || []).map(p => [p[1], p[0]]) } });
+      const por = () => {
+        if (!gl.getStyle()) return;
+        if (gl.getSource(id)) { gl.getSource(id).setData(dados()); return; }
+        gl.addSource(id, { type: "geojson", data: dados() });
+        gl.addLayer({
+          id, type: "line", source: id,
+          layout: { "line-cap": "round", "line-join": "round" },
+          paint: {
+            "line-color": (estilo && estilo.color) || "#111",
+            "line-width": (estilo && estilo.weight) || 7,
+            "line-opacity": estilo && estilo.opacity != null ? estilo.opacity : 1
+          }
+        });
+      };
+      quandoPronto(por);
+      return { remove() { quandoPronto(() => { if (gl.getLayer(id)) gl.removeLayer(id); if (gl.getSource(id)) gl.removeSource(id); }); } };
+    }
+  });
+  // Só um gesto de verdade solta o "seguir". easeTo/fitBounds também disparam rotatestart.
+  const gesto = ev => { if (ev && ev.originalEvent) api._emitir("dragstart"); };
+  gl.on("dragstart", gesto);
+  gl.on("rotatestart", gesto);
+  gl.on("zoomstart", gesto);
+  gl.on("pitchstart", gesto);
+  gl.on("move", () => api._emitir("move"));
+  gl.on("moveend", () => api._emitir("moveend"));
+  return api;
+}
+
+function criarMapaLeaflet(id, opcoes) {
+  const m = L.map(id, {
+    zoomControl: false, attributionControl: true,
+    dragging: true, touchZoom: true, scrollWheelZoom: true, doubleClickZoom: true, boxZoom: true
+  }).setView(PELOTAS, opcoes.zoom || 14);
+  m.attributionControl.setPrefix(false);
+  m.getContainer().classList.add("eja-mapa");
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, className: "tiles-suaves", attribution: "© OpenStreetMap" }).addTo(m);
+  const baseOn = m.on.bind(m);
+  m.on = function (ev, fn) { baseOn(ev, fn); return m; };
+  m.getPitch = () => 0;
+  m.getBearing = () => 0;
+  m.easePara = o => { m.setView([o.lat, o.lng], o.zoom == null ? m.getZoom() : o.zoom, { animate: true }); };
+  m.enquadrar = (pts, pad) => {
+    if (!pts || !pts.length) return;
+    if (pts.length === 1) { m.setView(pts[0], 15); return; }
+    m.fitBounds(L.latLngBounds(pts), { paddingTopLeft: [pad.left, pad.top], paddingBottomRight: [pad.right, pad.bottom], maxZoom: 16, animate: true });
+  };
+  m.marcador = (ll, html) => L.marker(ll, {
+    icon: L.divIcon({ className: "eja-marcador", html, iconSize: [22, 22], iconAnchor: [11, 11] })
+  }).addTo(m);
+  m.linha = (pts, estilo) => L.polyline(pts, Object.assign({ color: "#111", weight: 7, opacity: 1, lineCap: "round", lineJoin: "round" }, estilo || {})).addTo(m);
+  m._eja = "leaflet";
+  return m;
+}
+
+function colocarMarcador(mapa, lat, lng, html) {
+  if (mapa && mapa.marcador) return mapa.marcador([lat, lng], html);
+  return null;
+}
+function colocarLinha(mapa, pts, estilo) {
+  if (mapa && mapa.linha) return mapa.linha(pts, estilo || ROTA);
+  return null;
+}
+
+// Enquadra a rota na faixa visível acima da folha. O padding de baixo é a altura atual da folha.
+function paddingRota(m, baixo) {
+  const el = m && m.getContainer ? m.getContainer() : null;
+  const H = (el && el.clientHeight) || window.innerHeight || 700;
+  const W = (el && el.clientWidth) || window.innerWidth || 360;
+  let top = Math.min(120, Math.round(H * 0.14));
+  let bottom = Math.max(0, baixo || 0) + 18;
+  const lado = Math.min(56, Math.round(W * 0.1));
+  if (top + bottom > H - 72) {
+    const escala = (H - 72) / (top + bottom);
+    top = Math.round(top * escala);
+    bottom = Math.round(bottom * escala);
+  }
+  return { top, bottom, left: lado, right: lado };
+}
+function enquadrarMapa(m, pts, baixo, duracao) {
+  if (!m || !pts || !pts.length) return;
+  ajustarMapa(m);
+  if (m.enquadrar) m.enquadrar(pts, paddingRota(m, baixo), duracao);
+  if (duracao !== 0) setTimeout(() => ajustarMapa(m), 280);
+}
 
 // Folha inferior com três paradas: colapsada, meio, cheia.
 // O arraste começa só na alça (toque ou mouse), para o mapa continuar recebendo o pan.
@@ -100,6 +319,10 @@ function ligarFolha(folha, opts) {
   }
   function medirColapsada(vh) {
     if (typeof opts.colapsada === "number") return opts.colapsada;
+    if (typeof opts.colapsada === "function") {
+      const v = opts.colapsada(vh);
+      if (v) return v;
+    }
     if (colCache && arrastando) return colCache;
     const snap = folha.dataset.snap;
     const h0s = folha.style.height, m0s = folha.style.maxHeight, t0s = folha.style.transition;
@@ -164,9 +387,15 @@ function ligarFolha(folha, opts) {
     ev.preventDefault();
     ev.stopPropagation();
   });
+  let ultimoAviso = 0;
   alca.addEventListener("pointermove", ev => {
     if (!arrastando || ev.pointerId !== ponteiro) return;
     aplicar(h0 + (y0 - ev.clientY), false);
+    const agora = Date.now();
+    if (agora - ultimoAviso > 70) {
+      ultimoAviso = agora;
+      window.dispatchEvent(new CustomEvent("eja-folha", { detail: { folha, arrastando: true } }));
+    }
     ev.preventDefault();
     ev.stopPropagation();
   });

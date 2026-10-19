@@ -54,6 +54,50 @@ try {
   ok(/S\/N/.test(numero.destino), "confirmação mostra S/N na entrega: " + numero.destino);
   await cliente.screenshot({ path: "/opt/cursor/artifacts/cliente-numero.png" });
 
+  const confirmar = await cliente.evaluate(async () => {
+    calcularRota = async () => ({ km: 2.4, segundos: 480, linha: [[-31.765, -52.337], [-31.76, -52.334], [-31.752, -52.328]] });
+    db.rpc = async () => ({ data: [{ preco: 18.5, distancia_km: 2.4, fonte: "rota" }], error: null });
+    await abrirConfirmar();
+    let linha = false;
+    for (let i = 0; i < 20 && !linha; i++) {
+      await new Promise(r => setTimeout(r, 200));
+      try {
+        const layers = mapa.gl ? mapa.gl.getStyle().layers : [];
+        linha = (layers || []).some(l => /^rota-/.test(l.id));
+      } catch (e) {}
+      if (mapa._eja === "leaflet") linha = !!document.querySelector("#mapa .leaflet-overlay-pane path, #mapa .leaflet-overlay-pane canvas");
+    }
+    const topo = document.elementFromPoint(180, 150);
+    return {
+      eta: (document.querySelector("#mapa .eta-badge") || {}).textContent || "",
+      callouts: document.querySelectorAll("#mapa .uber-balao").length,
+      halo: !!document.querySelector("#mapa .uber-halo"),
+      quadrado: !!document.querySelector("#mapa .pin-b"),
+      linha, tipo: mapa._eja,
+      centro: mapa.getCenter(),
+      noMapa: !!(topo && topo.closest && topo.closest(".maplibregl-map, .leaflet-container, .eja-marcador")),
+      livre: $("telaConfirmar").classList.contains("mapa-livre")
+    };
+  });
+  ok(confirmar.eta === "8 MIN" && confirmar.callouts >= 2 && confirmar.halo && confirmar.quadrado, "retirada com halo e 8 MIN, entrega com balão (" + confirmar.eta + ")");
+  ok(confirmar.linha, "rota preta desenhada no mapa (" + confirmar.tipo + ")");
+  ok(confirmar.noMapa && !confirmar.livre, "toque na área do mapa não cai na folha");
+  const centroAntes = confirmar.centro;
+  const caixaMapa = await cliente.$("#mapa").then(el => el.boundingBox());
+  await cliente.mouse.move(caixaMapa.x + 180, caixaMapa.y + 150);
+  await cliente.mouse.down();
+  await cliente.mouse.move(caixaMapa.x + 40, caixaMapa.y + 280, { steps: 12 });
+  await cliente.mouse.up();
+  await cliente.waitForFunction(() => $("telaConfirmar").classList.contains("mapa-livre"), { timeout: 2000 }).catch(() => {});
+  const depoisArraste = await cliente.evaluate(() => ({
+    livre: $("telaConfirmar").classList.contains("mapa-livre"),
+    fab: getComputedStyle(document.querySelector("#telaConfirmar .fab-mapa")).display,
+    centro: mapa.getCenter()
+  }));
+  const mudou = Math.abs(depoisArraste.centro.lat - centroAntes.lat) > 0.0003 || Math.abs(depoisArraste.centro.lng - centroAntes.lng) > 0.0003;
+  ok(mudou && depoisArraste.livre && depoisArraste.fab !== "none", "arrastar o mapa do cliente muda o centro e mostra recentralizar");
+  await cliente.screenshot({ path: "/opt/cursor/artifacts/cliente-confirmar-360.png" });
+
   const pedidoMapa = async (largura, altura, arquivo) => {
     await cliente.setViewport({ width: largura, height: altura, isMobile: true, hasTouch: true });
     const info = await cliente.evaluate(async () => {
@@ -184,8 +228,15 @@ try {
       mapH: Math.round($("mapa").getBoundingClientRect().height),
       vh: window.innerHeight,
       etaBottom: Math.round($("navEta").getBoundingClientRect().bottom),
-      folhaTop: Math.round(painel.getBoundingClientRect().top)
+      folhaTop: Math.round(painel.getBoundingClientRect().top),
+      pitch: mapa.getPitch(),
+      tipo: mapa._eja,
+      livre: document.body.classList.contains("mapa-livre"),
+      titulo: $("motoStatusTitulo").textContent,
+      bussola: $("bussola").textContent.trim()
     };
+    const alvo = document.elementFromPoint(180, 240);
+    antes.noMapa = !!(alvo && alvo.closest && alvo.closest(".maplibregl-map, .leaflet-container, .eja-marcador"));
     Chat.alternar();
     await new Promise(r => setTimeout(r, 50));
     const lista = $("ejaChatLista") ? $("ejaChatLista").textContent : "";
@@ -203,8 +254,31 @@ try {
   ok(nav.antes.etaBottom <= nav.antes.folhaTop + 4, "ETA fica acima da folha");
   ok(/Estou na porta/.test(nav.lista) && /Pode descer/.test(nav.depois), "conversa mostra a mensagem recebida e a enviada");
   ok(nav.voz === "Voz off", "voz começa desligada");
+  ok(nav.antes.pitch > 40 && nav.antes.tipo === "gl", "mapa do motoboy em 3D (" + Math.round(nav.antes.pitch) + "°, " + nav.antes.tipo + ")");
+  ok(nav.antes.noMapa && !nav.antes.livre && nav.antes.bussola === "↑", "gestos livres e bússola no sentido da moto");
   await moto.screenshot({ path: "/opt/cursor/artifacts/motoboy-chat.png" });
   await moto.evaluate(() => Chat._fechar());
+  const centroMoto = await moto.evaluate(() => mapa.getCenter());
+  const caixaMoto = await moto.$("#mapa").then(el => el.boundingBox());
+  await moto.mouse.move(caixaMoto.x + 180, caixaMoto.y + 240);
+  await moto.mouse.down();
+  await moto.mouse.move(caixaMoto.x + 40, caixaMoto.y + 420, { steps: 12 });
+  await moto.mouse.up();
+  await moto.waitForFunction(() => document.body.classList.contains("mapa-livre"), { timeout: 2000 }).catch(() => {});
+  const panMoto = await moto.evaluate(() => {
+    const c = mapa.getCenter();
+    Nav.ultimoRumo = 90;
+    return {
+      lat: c.lat, lng: c.lng,
+      livre: document.body.classList.contains("mapa-livre"),
+      fab: getComputedStyle(document.querySelector("#telaTrabalho .fab-tr")).display
+    };
+  });
+  const motoMudou = Math.abs(panMoto.lat - centroMoto.lat) > 0.0003 || Math.abs(panMoto.lng - centroMoto.lng) > 0.0003;
+  ok(motoMudou && panMoto.livre && panMoto.fab !== "none", "arrastar o mapa do motoboy muda o centro e mostra recentralizar");
+  await moto.evaluate(() => { alternarBussola(); });
+  const norte = await moto.evaluate(() => ({ texto: $("bussola").textContent.trim(), norte: $("bussola").classList.contains("norte"), bearing: mapa.getBearing() }));
+  ok(norte.texto === "N" && norte.norte && Math.abs(norte.bearing) < 1, "bússola alterna para o norte (" + norte.bearing.toFixed(0) + "°)");
   await moto.screenshot({ path: "/opt/cursor/artifacts/motoboy-nav-360.png" });
   await moto.screenshot({ path: "/opt/cursor/artifacts/motoboy-nav.png" });
   const arrasteMoto = await moto.evaluate(() => {

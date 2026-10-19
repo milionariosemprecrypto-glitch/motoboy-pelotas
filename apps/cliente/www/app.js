@@ -150,7 +150,7 @@ function abrirPlano() {
     (origem ? $("destino") : $("origem")).focus();
   }, 50);
 }
-function fecharPlano() { telaSobre("telaPlano", false); definindo = null; $("destino").placeholder = "Para onde?"; atualizarBotaoPlano(); }
+function fecharPlano() { alojarNumeros(false); telaSobre("telaPlano", false); definindo = null; $("destino").placeholder = "Para onde?"; atualizarBotaoPlano(); }
 function escolherDestino(e) { definirLado("destino", e); }
 function sufixo(lado) { return lado === "origem" ? "Origem" : "Destino"; }
 function rotuloLugar(e) {
@@ -190,7 +190,17 @@ function definirLado(lado, e) {
     if ($("telaPlano").classList.contains("hidden")) abrirPlano();
     if (!origem) { toast("Agora escolha o endereço de retirada."); $("origem").focus(); return; }
   }
-  if (!obj.numero) $("num" + sufixo(lado)).focus();
+  if (!definindo && origem && destino && origem.lat != null && destino.lat != null) abrirConfirmar();
+  else if (!obj.numero) $("num" + sufixo(lado)).focus();
+}
+function alojarNumeros(noMapa) {
+  const o = $("detOrigem"), d = $("detDestino");
+  if (!o || !d) return;
+  if (noMapa && $("numsMapa")) { $("numsMapa").append(o, d); show("detOrigem", !!origem); show("detDestino", !!destino); }
+  else {
+    if ($("slotOrigem")) $("slotOrigem").append(o);
+    if ($("slotDestino")) $("slotDestino").append(d);
+  }
 }
 function lerDetalhe(lado) {
   const s = sufixo(lado);
@@ -301,19 +311,24 @@ function alturaFolha(sel) {
   if (!f) return Math.round((window.innerHeight || 700) * 0.34);
   return parseFloat(f.style.height) || f.getBoundingClientRect().height || Math.round((window.innerHeight || 700) * 0.34);
 }
-function enquadrar(m, pts, folhaSel) {
-  if (!m || !pts || !pts.length) return;
-  ajustarMapa(m);
-  const vh = window.innerHeight || 700, vw = window.innerWidth || 360;
-  let h = Math.min(alturaFolha(folhaSel), Math.round(vh * 0.5));
-  if (h < 80) h = Math.round(vh * 0.34);
-  const top = Math.min(120, Math.round(vh * 0.14));
-  const lado = Math.min(48, Math.round(vw * 0.08));
-  try {
-    if (pts.length === 1) m.setView(pts[0], 15);
-    else m.fitBounds(L.latLngBounds(pts), { paddingTopLeft: [lado, top], paddingBottomRight: [lado, h + 16], maxZoom: 16 });
-  } catch (e) {}
-  setTimeout(() => ajustarMapa(m), 280);
+function enquadrar(m, pts, folhaSel, duracao) {
+  enquadrarMapa(m, pts, alturaFolha(folhaSel), duracao);
+}
+let etaMin = null;
+function desenharConfirmacao() {
+  if (!mapa || !origem || !destino) return;
+  camadas.forEach(c => c.remove());
+  camadas = [
+    colocarMarcador(mapa, origem.lat, origem.lng, htmlRetirada(origem.nome, etaMin)),
+    colocarMarcador(mapa, destino.lat, destino.lng, htmlEntrega(destino.nome))
+  ];
+  const pts = rota && rota.linha && rota.linha.length > 1 ? rota.linha : [[origem.lat, origem.lng], [destino.lat, destino.lng]];
+  if (rota && rota.linha && rota.linha.length > 1) camadas.push(colocarLinha(mapa, rota.linha, ROTA));
+  enquadrar(mapa, pts, "#deliveryForm");
+}
+function verRotaConfirmada() {
+  $("telaConfirmar").classList.remove("mapa-livre");
+  desenharConfirmacao();
 }
 
 // ---------- Confirmar com preço ----------
@@ -323,27 +338,39 @@ async function abrirConfirmar() {
   $("resDestino").textContent = textoEndereco(destino.nome, destino.numero, destino.complemento);
   $("tagCategoria").textContent = categoria.nome;
   $("tipo").innerHTML = ""; categoria.itens.filter(i => !/NÃO/.test(i)).forEach(i => $("tipo").add(new Option(i, categoria.nome + ": " + i)));
-  if (!mapa) mapa = criarMapa("mapa");
+  alojarNumeros(true);
+  if (!mapa) {
+    mapa = criarMapa("mapa");
+    mapa.on("dragstart", () => { $("telaConfirmar").classList.add("mapa-livre"); });
+  }
   folhaIr($("deliveryForm"), 1);
-  await new Promise(r => setTimeout(r, 120));
-  camadas.forEach(c => c.remove());
-  camadas = [L.marker([origem.lat, origem.lng], { icon: icone.retirada() }).addTo(mapa), L.marker([destino.lat, destino.lng], { icon: icone.entrega() }).addTo(mapa)];
-  enquadrar(mapa, [[origem.lat, origem.lng], [destino.lat, destino.lng]], "#deliveryForm");
+  await new Promise(r => setTimeout(r, 80));
+  etaMin = null;
+  desenharConfirmacao();
   $("valor").textContent = "—"; $("km").textContent = "Calculando rota…";
   rota = await calcularRota(origem, destino);
-  if (rota) { camadas.push(L.polyline(rota.linha, ROTA).addTo(mapa)); enquadrar(mapa, rota.linha, "#deliveryForm"); }
+  if (rota && rota.segundos) etaMin = Math.max(1, Math.round(rota.segundos / 60));
+  desenharConfirmacao();
   const { data, error } = await db.rpc("cotar_preco", params());
   if (error) { $("km").textContent = erroMsg(error); return; }
   $("valor").textContent = money(data[0].preco);
-  $("km").textContent = Number(data[0].distancia_km).toLocaleString("pt-BR") + " km" + (data[0].fonte === "rota" ? " pela rua" : " (estimado)") + " · ~" + Math.max(8, Math.round(data[0].distancia_km * 3 + 6)) + " min";
+  const minPreco = Math.max(8, Math.round(Number(data[0].distancia_km) * 3 + 6));
+  if (!etaMin) etaMin = minPreco;
+  $("km").textContent = Number(data[0].distancia_km).toLocaleString("pt-BR") + " km" + (data[0].fonte === "rota" ? " pela rua" : " (estimado)") + " · ~" + (etaMin || minPreco) + " min";
+  desenharConfirmacao();
 }
-function voltarDoConfirmar() { telaSobre("telaConfirmar", false); abrirPlano(); }
+function voltarDoConfirmar() { alojarNumeros(false); telaSobre("telaConfirmar", false); abrirPlano(); }
 function params() {
   return { p_ret_lat: origem.lat, p_ret_lng: origem.lng, p_ent_lat: destino.lat, p_ent_lng: destino.lng, p_rota_km: rota ? Number(rota.km.toFixed(2)) : null };
 }
 
 $("deliveryForm").addEventListener("submit", async ev => {
   ev.preventDefault();
+  const a = lerDetalhe("origem"), b = lerDetalhe("destino");
+  if (!a.ok) { toast("Retirada: " + a.erro); voltarDoConfirmar(); $("numOrigem").focus(); return; }
+  if (!b.ok) { toast("Entrega: " + b.erro); voltarDoConfirmar(); $("numDestino").focus(); return; }
+  origem.numero = a.numero; origem.complemento = a.complemento;
+  destino.numero = b.numero; destino.complemento = b.complemento;
   const botao = $("btnConfirmar"); botao.disabled = true;
   try {
     const { data, error } = await db.rpc("criar_pedido", {
@@ -374,7 +401,7 @@ function enquadrarPedido() {
   const pts = pontosDoPedido();
   if (mapaPed && pts.length) enquadrar(mapaPed, pts, "#folhaPedido");
 }
-function verRotaPedido() { seguirPedido = true; enquadrarPedido(); }
+function verRotaPedido() { seguirPedido = true; $("pedido").classList.remove("mapa-livre"); enquadrarPedido(); }
 
 async function mostrarPedido(p) {
   pedido = p; ultimoS = null; seguirPedido = true;
@@ -383,7 +410,7 @@ async function mostrarPedido(p) {
     textoEndereco(p.entrega, p.ent_numero, p.ent_complemento) + " · " + p.item + " · " + money(p.preco);
   if (!mapaPed) {
     mapaPed = criarMapa("mapaPedido");
-    mapaPed.on("dragstart", () => { seguirPedido = false; });
+    mapaPed.on("dragstart", () => { seguirPedido = false; $("pedido").classList.add("mapa-livre"); });
   } else setTimeout(() => ajustarMapa(mapaPed), 60);
   if (p.ret_lat == null) {
     const { data } = await db.from("pedidos").select("ret_lat,ret_lng,ent_lat,ent_lng,ret_numero,ret_complemento,ent_numero,ent_complemento").eq("id", p.id).single();
@@ -394,9 +421,13 @@ async function mostrarPedido(p) {
   camadasPed.forEach(c => c.remove());
   camadasPed = [];
   if (p.ret_lat != null && p.ent_lat != null) {
-    camadasPed.push(L.polyline([[p.ret_lat, p.ret_lng], [p.ent_lat, p.ent_lng]], { color: "#111", weight: 4, opacity: .45, dashArray: "7 8" }).addTo(mapaPed));
-    camadasPed.push(L.marker([p.ret_lat, p.ret_lng], { icon: icone.retirada() }).addTo(mapaPed));
-    camadasPed.push(L.marker([p.ent_lat, p.ent_lng], { icon: icone.entrega() }).addTo(mapaPed));
+    camadasPed.push(colocarMarcador(mapaPed, p.ret_lat, p.ret_lng, htmlRetirada(p.retirada)));
+    camadasPed.push(colocarMarcador(mapaPed, p.ent_lat, p.ent_lng, htmlEntrega(p.entrega)));
+    calcularRota({ lat: p.ret_lat, lng: p.ret_lng }, { lat: p.ent_lat, lng: p.ent_lng }).then(r => {
+      if (!r || !mapaPed || pedido !== p) return;
+      camadasPed.push(colocarLinha(mapaPed, r.linha, ROTA));
+      if (seguirPedido) enquadrarPedido();
+    });
   }
   folhaIr($("folhaPedido"), 0);
   setTimeout(enquadrarPedido, 160);
@@ -412,7 +443,7 @@ function moverMoto(lat, lng) {
   if (!mapaPed || lat == null || lng == null) return;
   const primeiro = !pedido.motoPos;
   pedido.motoPos = [+lat, +lng];
-  if (!motoMarker) motoMarker = L.marker(pedido.motoPos, { icon: icone.moto(), zIndexOffset: 1000 }).addTo(mapaPed);
+  if (!motoMarker) motoMarker = colocarMarcador(mapaPed, pedido.motoPos[0], pedido.motoPos[1], htmlMoto());
   else motoMarker.setLatLng(pedido.motoPos);
   let fora = false;
   try { fora = !mapaPed.getBounds().pad(-0.05).contains(pedido.motoPos); } catch (e) { fora = true; }
@@ -524,10 +555,11 @@ ligarFolha($("folhaPedido"), { inicial: 0 });
 window.addEventListener("eja-folha", ev => {
   const f = ev.detail && ev.detail.folha;
   if (!f) return;
-  if (f.id === "folhaPedido" && pedido && mapaPed) enquadrarPedido();
+  const duracao = ev.detail.arrastando ? 0 : undefined;
+  if (f.id === "folhaPedido" && pedido && mapaPed && seguirPedido) enquadrar(mapaPed, pontosDoPedido(), "#folhaPedido", duracao);
   if (f.id === "folhaPino" && mapaPino && !$("telaPino").classList.contains("hidden")) nomearPino();
   if (f.id === "deliveryForm" && mapa && origem && destino) {
     const pts = rota && rota.linha ? rota.linha : [[origem.lat, origem.lng], [destino.lat, destino.lng]];
-    enquadrar(mapa, pts, "#deliveryForm");
+    enquadrar(mapa, pts, "#deliveryForm", duracao);
   }
 });

@@ -124,7 +124,7 @@
     <div class="caixa-rota">
       <div class="trilho"><i class="t-a"></i><i class="t-linha"></i><i class="t-b"></i></div>
       <div class="campos">
-        <div class="campo">
+        <div class="campo" id="slotOrigem">
           <input id="origem" placeholder="Endereço de retirada" autocomplete="off" maxlength="200">
           <div id="sugOrigem" class="sugestoes"></div>
           <div id="detOrigem" class="detalhe-end hidden">
@@ -135,7 +135,7 @@
             <input id="compOrigem" maxlength="80" placeholder="Complemento ou referência (opcional)" autocomplete="off" aria-label="Complemento da retirada">
           </div>
         </div>
-        <div class="campo">
+        <div class="campo" id="slotDestino">
           <input id="destino" placeholder="Para onde?" autocomplete="off" maxlength="200">
           <div id="sugDestino" class="sugestoes"></div>
           <div id="detDestino" class="detalhe-end hidden">
@@ -184,10 +184,12 @@
   <section id="telaConfirmar" class="tela sobre mapa-tela hidden">
     <div id="mapa" class="mapa-cheio mapa-meio"></div>
     <button class="fab-voltar" type="button" onclick="voltarDoConfirmar()">←</button>
+    <button class="fab-mapa" type="button" onclick="verRotaConfirmada()" aria-label="Centralizar a rota">⌖</button>
     <form id="deliveryForm" class="folha">
       <div class="alca"></div>
       <div class="folha-miolo">
         <div class="rota-resumo"><div><i class="t-a"></i><span id="resOrigem"></span></div><div><i class="t-b"></i><span id="resDestino"></span></div></div>
+        <div id="numsMapa"></div>
         <label for="tipo">O que será entregue?</label>
         <select id="tipo"></select>
         <div class="opcao-preco">

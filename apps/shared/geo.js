@@ -165,7 +165,7 @@ async function calcularRota(a, b) {
     const j = await r.json();
     if (j.code !== "Ok") return null;
     const rota = j.routes[0];
-    return { km: rota.distance / 1000, linha: rota.geometry.coordinates.map(c => [c[1], c[0]]) };
+    return { km: rota.distance / 1000, segundos: rota.duration || 0, linha: rota.geometry.coordinates.map(c => [c[1], c[0]]) };
   } catch { return null; }
 }
 

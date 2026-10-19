@@ -84,10 +84,17 @@ function motoAba(a) {
 function iniciarMapa() {
   if (mapa) return;
   document.body.classList.add("modo-mapa");
-  mapa = criarMapa("mapa");
-  ligarFolha(document.querySelector("#telaTrabalho .painel"), { inicial: 0 });
+  mapa = criarMapa("mapa", { pitch: 55, zoom: 15 });
+  ligarFolha(document.querySelector("#telaTrabalho .painel"), {
+    inicial: 0,
+    colapsada: () => document.body.classList.contains("em-corrida") ? 0 : 148
+  });
   if ($("navVoz")) $("navVoz").textContent = vozLigada ? "Voz on" : "Voz off";
-  mapa.on("dragstart", () => { if (ocupado) seguirMoto = false; });
+  mapa.on("dragstart", () => { seguirMoto = false; document.body.classList.add("mapa-livre"); });
+  mapa.on("move", () => { if (marcador) orientarMarcador(marcador, Nav.ultimoRumo, mapa.getBearing()); });
+  window.addEventListener("eja-folha", ev => {
+    if (seguirMoto && ultimaPos) aplicarCamera(ultimaPos[0], ultimaPos[1], Nav.ultimoRumo, 0, ev.detail && ev.detail.arrastando ? 0 : 400);
+  });
   if (!navigator.geolocation) return;
   navigator.geolocation.watchPosition(p => {
     aoPosicao(p.coords.latitude, p.coords.longitude, p.coords.heading, p.coords.speed);
@@ -118,10 +125,45 @@ async function localizacaoSegundoPlano(ligar) {
   } else if (!ligar && watcherBg) { await BG.removeWatcher({ id: watcherBg }); watcherBg = null; }
 }
 
+let rumoParaCima = true;
+function zoomPorVelocidade(speed) {
+  if (!ocupado) return 16.4;
+  const v = speed == null ? 0 : speed;
+  if (v < 1.5) return 17;
+  if (v < 6) return 16.4;
+  if (v < 12) return 15.8;
+  return 15.2;
+}
+function paddingCamera() {
+  const folha = document.querySelector("#telaTrabalho .painel");
+  const H = window.innerHeight || 700;
+  const h = folha ? (parseFloat(folha.style.height) || folha.getBoundingClientRect().height || 148) : 148;
+  let bottom = Math.max(0, h) + 28;
+  const top = document.body.classList.contains("em-corrida") ? 108 : 72;
+  if (top + bottom > H - 96) bottom = Math.max(48, H - 96 - top);
+  return { top, bottom, left: 28, right: 72 };
+}
+function aplicarCamera(lat, lng, bearing, speed, duracao) {
+  if (!mapa || !seguirMoto || !mapa.easePara) return;
+  const b = rumoParaCima ? (bearing || 0) : 0;
+  mapa.easePara({ lat, lng, bearing: b, pitch: 55, zoom: zoomPorVelocidade(speed), padding: paddingCamera(), duration: duracao == null ? 750 : duracao });
+  orientarMarcador(marcador, bearing || 0, b);
+}
+function alternarBussola() {
+  rumoParaCima = !rumoParaCima;
+  const btn = $("bussola");
+  if (btn) { btn.classList.toggle("norte", !rumoParaCima); btn.querySelector("b").textContent = rumoParaCima ? "↑" : "N"; }
+  if (seguirMoto && ultimaPos) aplicarCamera(ultimaPos[0], ultimaPos[1], Nav.ultimoRumo, 0);
+  else if (mapa && mapa.easePara && mapa.getCenter) {
+    const c = mapa.getCenter();
+    mapa.easePara({ lat: c.lat, lng: c.lng, bearing: rumoParaCima ? (Nav.ultimoRumo || 0) : 0, pitch: 55, zoom: mapa.getZoom(), duration: 450 });
+  }
+}
 function centralizar() {
   seguirMoto = true;
-  if (ultimaPos) mapa.setView(ultimaPos, ocupado ? Math.max(mapa.getZoom(), 16) : 16);
-  else mapa.setView(PELOTAS, 14);
+  document.body.classList.remove("mapa-livre");
+  if (ultimaPos) aplicarCamera(ultimaPos[0], ultimaPos[1], Nav.ultimoRumo, 0);
+  else if (mapa) mapa.setView(PELOTAS, 14);
 }
 
 function atualizarPainel() {
@@ -204,13 +246,13 @@ function desenharAlvo() {
   if (!alvo || !mapa) return;
   if (alvoDesenhado === alvo.key && marcaAlvo) return;
   if (marcaAlvo) marcaAlvo.remove();
-  marcaAlvo = L.marker([alvo.lat, alvo.lng], { icon: corrida.status === "aceito" ? icone.retirada() : icone.entrega() }).addTo(mapa);
+  marcaAlvo = colocarMarcador(mapa, alvo.lat, alvo.lng, htmlAlvo(corrida.status === "aceito"));
   alvoDesenhado = alvo.key;
 }
 function desenharLinhaNav() {
   if (!mapa) return;
   if (linhaNav) { linhaNav.remove(); linhaNav = null; }
-  if (Nav.rota) linhaNav = L.polyline(Nav.rota.linha, ROTA).addTo(mapa);
+  if (Nav.rota) linhaNav = colocarLinha(mapa, Nav.rota.linha, ROTA);
 }
 function preencherLugar(c) {
   const coleta = c.status === "aceito";
@@ -274,14 +316,18 @@ async function aoPosicao(lat, lng, heading, speed) {
   const ll = [lat, lng];
   ultimaPos = ll;
   if (mapa) {
-    if (!marcador) {
-      marcador = L.marker(ll, { icon: icone.moto(), zIndexOffset: 1000 }).addTo(mapa);
-      if (!ocupado) mapa.setView(ll, 15);
-    } else marcador.setLatLng(ll);
+    if (!marcador) marcador = colocarMarcador(mapa, lat, lng, htmlMoto());
+    else marcador.setLatLng(ll);
   }
   const rumo = escolherRumo(anterior, { lat, lng }, heading, speed);
-  if (rumo != null) { Nav.ultimoRumo = rumo; orientarMarcador(marcador, rumo); }
-  if (!ocupado || !corrida) return;
+  if (rumo != null) Nav.ultimoRumo = rumo;
+  const seguirCamera = () => {
+    if (seguirMoto && mapa && Date.now() - ultimoPan > 600) {
+      ultimoPan = Date.now();
+      aplicarCamera(lat, lng, Nav.ultimoRumo, speed);
+    } else orientarMarcador(marcador, Nav.ultimoRumo, mapa && mapa.getBearing ? mapa.getBearing() : 0);
+  };
+  if (!ocupado || !corrida) { seguirCamera(); return; }
   const alvo = alvoCorrida();
   if (!alvo) return;
   desenharAlvo();
@@ -294,10 +340,7 @@ async function aoPosicao(lat, lng, heading, speed) {
     else if (res && !res.throttled && !Nav.rota) Nav.falhou = true;
   }
   renderNav(lat, lng);
-  if (seguirMoto && mapa && Date.now() - ultimoPan > 800) {
-    ultimoPan = Date.now();
-    mapa.panTo(ll, { animate: true, duration: 0.5 });
-  }
+  seguirCamera();
 }
 
 function abrirNavegacao(app) {
@@ -310,7 +353,7 @@ function mostrarCorrida() {
   const c = corrida, coletando = c.status === "aceito";
   seguirMoto = true;
   document.body.classList.add("em-corrida");
-  if (mapa && ultimaPos) mapa.setView(ultimaPos, 17);
+  if (mapa && ultimaPos) aplicarCamera(ultimaPos[0], ultimaPos[1], Nav.ultimoRumo, 1);
   desenharAlvo();
   if (ultimaPos) aoPosicao(ultimaPos[0], ultimaPos[1], Nav.ultimoRumo, 1);
   else renderNav(PELOTAS[0], PELOTAS[1]);

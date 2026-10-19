@@ -24,35 +24,87 @@ try {
   await cliente.waitForFunction(() => typeof definirLado === "function" && typeof continuarPlano === "function");
   const numero = await cliente.evaluate(async () => {
     calcularRota = async () => null;
-    db.rpc = async () => ({ data: null, error: { message: "sem sessão neste teste" } });
+    let enviou = false;
+    db.rpc = async (fn) => {
+      if (fn === "criar_pedido") enviou = true;
+      return { data: null, error: { message: "sem sessão neste teste" } };
+    };
     show("telaOnboarding", false);
     show("telaAuth", false);
     show("telaApp", true);
     ligarSn("origem"); ligarSn("destino");
-    definirLado("origem", { nome: "Rua General Osório · Centro", lat: -31.765, lng: -52.337 });
-    definirLado("destino", { nome: "Avenida Bento Gonçalves · Areal", lat: -31.752, lng: -52.328 });
-    continuarPlano();
+    definirLado("origem", { nome: "Rua General Osório", bairro: "Centro", lat: -31.765, lng: -52.337, numero: "100", complemento: "em frente à praça" });
+    definirLado("destino", { nome: "Avenida Bento Gonçalves", bairro: "Areal", lat: -31.752, lng: -52.328, tipo: "rua" });
+    await new Promise(r => setTimeout(r, 250));
+    const destinoTravado = $("snDestino").checked && $("numDestino").disabled;
+    $("snOrigem").checked = false;
+    $("numOrigem").value = "";
+    const ev = new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true });
+    $("numOrigem").dispatchEvent(ev);
+    $("deliveryForm").requestSubmit();
+    await new Promise(r => setTimeout(r, 80));
     const toastSem = $("toast").textContent;
     $("numOrigem").value = "100";
+    $("snOrigem").checked = false;
     $("compOrigem").value = "em frente à praça";
-    $("snDestino").checked = true;
-    $("snDestino").dispatchEvent(new Event("change"));
-    const destinoTravado = $("numDestino").disabled && $("numDestino").value === "";
-    continuarPlano();
-    await new Promise(r => setTimeout(r, 200));
     return {
       toastSem,
+      enterBloqueado: ev.defaultPrevented,
+      enviou,
       destinoTravado,
       origem: $("resOrigem").textContent,
       destino: $("resDestino").textContent,
       confirmar: !$("telaConfirmar").classList.contains("hidden")
     };
   });
-  ok(/número/.test(numero.toastSem), "sem número, o cliente vê o aviso: " + numero.toastSem);
+  ok(/número/.test(numero.toastSem) && numero.enterBloqueado && !numero.enviou, "Enter no número não cria o pedido: " + numero.toastSem);
   ok(numero.destinoTravado, "S/N desliga o campo de número");
   ok(numero.confirmar && /nº 100/.test(numero.origem) && /praça/.test(numero.origem), "confirmação mostra nº 100 e o complemento: " + numero.origem);
   ok(/S\/N/.test(numero.destino), "confirmação mostra S/N na entrega: " + numero.destino);
   await cliente.screenshot({ path: "/opt/cursor/artifacts/cliente-numero.png" });
+
+  const pino = await cliente.evaluate(async () => {
+    let nomes = 0;
+    const original = nomeDoPonto;
+    nomeDoPonto = async () => { nomes++; await new Promise(r => setTimeout(r, 30)); return "Rua do teste"; };
+    abrirPinoMapa("destino");
+    await new Promise(r => setTimeout(r, 500));
+    const alvo = { lat: -31.7654, lng: -52.3372 };
+    centralizarPino(alvo, 17, 0);
+    await new Promise(r => setTimeout(r, 120));
+    const antes = pontoDoPino();
+    const nomesAntes = nomes;
+    const folha = $("folhaPino");
+    const alca = folha.querySelector(".alca");
+    const r = alca.getBoundingClientRect();
+    const ev = (tipo, y) => alca.dispatchEvent(new PointerEvent(tipo, { bubbles: true, cancelable: true, pointerId: 4, pointerType: "mouse", button: 0, clientX: r.left + 20, clientY: y }));
+    ev("pointerdown", r.top + 8);
+    ev("pointermove", r.top - 160);
+    ev("pointerup", r.top - 160);
+    await new Promise(r => setTimeout(r, 200));
+    const depois = pontoDoPino();
+    const btn = $("btnPino");
+    pinoNomeando = true;
+    atualizarBotaoPino();
+    const travado = btn.disabled;
+    pinoNomeando = false;
+    pinoAtual = null;
+    atualizarBotaoPino();
+    const semNome = btn.disabled;
+    nomeDoPonto = original;
+    fecharPino();
+    return {
+      dlat: Math.abs(antes.lat - alvo.lat),
+      dlng: Math.abs(antes.lng - alvo.lng),
+      folhaLat: Math.abs(depois.lat - antes.lat),
+      folhaLng: Math.abs(depois.lng - antes.lng),
+      nomes: nomes - nomesAntes,
+      travado, semNome
+    };
+  });
+  ok(pino.dlat < 0.00045 && pino.dlng < 0.00045, "pino confirma o ponto escolhido (" + pino.dlat.toFixed(5) + ", " + pino.dlng.toFixed(5) + ")");
+  ok(pino.folhaLat < 0.00045 && pino.folhaLng < 0.00045 && pino.nomes === 0, "arrastar a folha não troca o ponto nem busca de novo");
+  ok(pino.travado && pino.semNome, "confirmar fica desligado sem endereço");
 
   const confirmar = await cliente.evaluate(async () => {
     calcularRota = async () => ({ km: 2.4, segundos: 480, linha: [[-31.765, -52.337], [-31.76, -52.334], [-31.752, -52.328]] });

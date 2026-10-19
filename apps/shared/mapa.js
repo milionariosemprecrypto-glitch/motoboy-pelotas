@@ -59,6 +59,9 @@ function htmlEntrega(nome) {
 function htmlMoto() {
   return '<div class="seta-moto pin-moto"><span></span></div>';
 }
+function htmlPontoUsuario() {
+  return '<div class="eu-ponto"></div>';
+}
 function htmlAlvo(coleta) {
   return coleta ? '<div class="uber-pickup"><div class="uber-halo"></div><i class="pin-a"></i></div>'
     : '<div class="uber-drop"><i class="pin-b"></i></div>';
@@ -140,16 +143,21 @@ function criarMapaGL(id, opcoes) {
   if (!el) return null;
   el.classList.add("eja-mapa");
   const pitch = opcoes.pitch || 0;
+  const rotacao = opcoes.rotacao != null ? !!opcoes.rotacao : pitch > 0;
+  const limite = opcoes.limiteCidade && typeof PELOTAS_BBOX !== "undefined" ? PELOTAS_BBOX : null;
   const gl = new maplibregl.Map({
     container: el,
     style: { version: 8, sources: {}, layers: [{ id: "fundo", type: "background", paint: { "background-color": PALETA.terra } }] },
     center: [PELOTAS[1], PELOTAS[0]],
     zoom: opcoes.zoom || 14,
-    pitch, bearing: 0, maxPitch: 65,
+    pitch, bearing: 0, maxPitch: rotacao ? 65 : 0,
     attributionControl: true,
-    dragPan: true, dragRotate: true, touchZoomRotate: true, touchPitch: pitch > 0,
-    pitchWithRotate: false, doubleClickZoom: true, scrollZoom: true, cooperativeGestures: false
+    dragPan: true, dragRotate: rotacao, touchZoomRotate: true, touchPitch: pitch > 0 && rotacao,
+    pitchWithRotate: false, doubleClickZoom: true, scrollZoom: true, cooperativeGestures: false,
+    maxBounds: limite ? [[limite[0] - 0.06, limite[1] - 0.06], [limite[2] + 0.06, limite[3] + 0.06]] : undefined
   });
+  if (!rotacao && gl.touchZoomRotate && gl.touchZoomRotate.disableRotation) gl.touchZoomRotate.disableRotation();
+  if (!rotacao && gl.dragRotate && gl.dragRotate.disable) gl.dragRotate.disable();
   const fila = [];
   let estiloPronto = false;
   let geracaoEstilo = 0;
@@ -193,7 +201,19 @@ function criarMapaGL(id, opcoes) {
     getBounds: () => { const b = gl.getBounds(); return caixaDe([[b.getSouth(), b.getWest()], [b.getNorth(), b.getEast()]]); },
     resize() { gl.resize(); },
     invalidateSize() { gl.resize(); },
-    setView(ll, zoom) { gl.jumpTo({ center: [ll[1], ll[0]], zoom: zoom == null ? gl.getZoom() : zoom, pitch: gl.getPitch() }); return api; },
+    setView(ll, zoom, opcoes) {
+      const o = opcoes || {};
+      const cam = {
+        center: [ll[1], ll[0]],
+        zoom: zoom == null ? gl.getZoom() : zoom,
+        pitch: o.pitch == null ? gl.getPitch() : o.pitch,
+        bearing: o.bearing == null ? gl.getBearing() : o.bearing
+      };
+      if (o.padding) cam.padding = o.padding;
+      if (o.duration) gl.easeTo(Object.assign({ duration: o.duration }, cam));
+      else gl.jumpTo(cam);
+      return api;
+    },
     panTo(ll) { gl.easeTo({ center: [ll[1], ll[0]], duration: 500 }); return api; },
     easePara(o) {
       const alvo = {
@@ -239,14 +259,16 @@ function criarMapaGL(id, opcoes) {
         if (!gl.getStyle()) return;
         if (gl.getSource(id)) { gl.getSource(id).setData(dados()); return; }
         gl.addSource(id, { type: "geojson", data: dados() });
+        const paint = {
+          "line-color": (estilo && estilo.color) || "#111111",
+          "line-width": (estilo && estilo.weight) || 7,
+          "line-opacity": estilo && estilo.opacity != null ? estilo.opacity : 1
+        };
+        if (estilo && estilo.tracejada) paint["line-dasharray"] = [1.4, 1.6];
         gl.addLayer({
           id, type: "line", source: id,
           layout: { "line-cap": "round", "line-join": "round" },
-          paint: {
-            "line-color": (estilo && estilo.color) || "#111111",
-            "line-width": (estilo && estilo.weight) || 7,
-            "line-opacity": estilo && estilo.opacity != null ? estilo.opacity : 1
-          }
+          paint
         });
       };
       quandoPronto(por);
@@ -276,7 +298,7 @@ function criarMapaLeaflet(id, opcoes) {
   m.on = function (ev, fn) { baseOn(ev, fn); return m; };
   m.getPitch = () => 0;
   m.getBearing = () => 0;
-  m.easePara = o => { m.setView([o.lat, o.lng], o.zoom == null ? m.getZoom() : o.zoom, { animate: true }); };
+  m.easePara = o => { m.setView([o.lat, o.lng], o.zoom == null ? m.getZoom() : o.zoom, { duration: o.duration == null ? 500 : o.duration, padding: o.padding, bearing: o.bearing }); };
   m.enquadrar = (pts, pad) => {
     if (!pts || !pts.length) return;
     if (pts.length === 1) { m.setView(pts[0], 15); return; }
@@ -285,7 +307,20 @@ function criarMapaLeaflet(id, opcoes) {
   m.marcador = (ll, html) => L.marker(ll, {
     icon: L.divIcon({ className: "eja-marcador", html, iconSize: [22, 22], iconAnchor: [11, 11] })
   }).addTo(m);
-  m.linha = (pts, estilo) => L.polyline(pts, Object.assign({ color: "#111", weight: 7, opacity: 1, lineCap: "round", lineJoin: "round" }, estilo || {})).addTo(m);
+  m.linha = (pts, estilo) => L.polyline(pts, Object.assign({
+    color: "#111", weight: 7, opacity: 1, lineCap: "round", lineJoin: "round",
+    dashArray: estilo && estilo.tracejada ? "2 10" : null
+  }, estilo || {})).addTo(m);
+  const ver = m.setView.bind(m);
+  m.setView = (ll, zoom, opcoes) => {
+    ver(ll, zoom, { animate: !!(opcoes && (opcoes.duration || opcoes.animate)) });
+    if (opcoes && opcoes.padding) {
+      const p = opcoes.padding;
+      m.panBy([-((p.left || 0) - (p.right || 0)) / 2, -((p.top || 0) - (p.bottom || 0)) / 2], { animate: false });
+    }
+    if (opcoes && opcoes.bearing != null && m.setBearing) m.setBearing(opcoes.bearing);
+    return m;
+  };
   m._eja = "leaflet";
   return m;
 }

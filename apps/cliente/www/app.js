@@ -43,11 +43,7 @@ async function carregar(u) {
   db.from("profiles").select("nome").eq("id", u.id).maybeSingle().then(({ data }) => { if (data && data.nome) $("contaNome").textContent = data.nome; });
   montarServicos(); irAba("home"); atualizarLocal(false);
   iniciarPush("cliente", () => atualizarStatus());
-  autocompletar($("origem"), $("sugOrigem"), e => definirLado("origem", e), t => marcarNoMapa("origem", t));
-  autocompletar($("destino"), $("sugDestino"), e => definirLado("destino", e), t => marcarNoMapa("destino", t));
-  $("origem").addEventListener("input", () => { if ($("origem").dataset.escolhido !== "1") limparDetalhe("origem"); });
-  $("destino").addEventListener("input", () => { if ($("destino").dataset.escolhido !== "1") limparDetalhe("destino"); });
-  ligarSn("origem"); ligarSn("destino");
+  ligarBusca();
   await carregarHistorico();
   const { data } = await db.rpc("meu_pedido_ativo");
   if (data && data[0]) mostrarPedido(data[0]);
@@ -70,15 +66,55 @@ const telaSobre = (id, on) => { show(id, on); document.body.classList.toggle("se
 
 // ---------- Localização atual ----------
 function atualizarLocal(avisar) {
-  if (!navigator.geolocation) return;
+  $("locAtual").textContent = "Buscando localização…";
+  if (!navigator.geolocation) {
+    $("locAtual").textContent = "GPS indisponível";
+    if (avisar) toast("Este aparelho não informou a localização.");
+    return;
+  }
   navigator.geolocation.getCurrentPosition(async p => {
-    aqui = { lat: p.coords.latitude, lng: p.coords.longitude };
-    if (!dentroPelotas(aqui.lat, aqui.lng)) { $("locAtual").textContent = "Fora de Pelotas"; return; }
-    const nome = await nomeDoPonto(aqui.lat, aqui.lng);
+    aqui = { lat: p.coords.latitude, lng: p.coords.longitude, numero: "S/N", complemento: "" };
+    if (!dentroPelotas(aqui.lat, aqui.lng)) {
+      $("locAtual").textContent = "Fora de Pelotas";
+      if (avisar) toast("Por enquanto atendemos só Pelotas.");
+      return;
+    }
+    const nome = await nomeDoPonto(aqui.lat, aqui.lng, { timeout: 4000 });
     aqui.nome = nome || "Minha localização";
     $("locAtual").textContent = aqui.nome;
     montarLugares();
-  }, () => avisar && toast("Ative a localização para usar seu endereço atual."), { enableHighAccuracy: true, timeout: 10000 });
+    pintarPontosAzuis();
+  }, err => {
+    const negado = err && err.code === 1;
+    const tempo = err && err.code === 3;
+    $("locAtual").textContent = negado ? "Localização bloqueada" : tempo ? "Tempo esgotado" : "Sem localização";
+    if (avisar) toast(negado ? "Permita a localização para usar seu endereço." : tempo ? "O GPS demorou demais. Tente de novo." : "Não foi possível ler a localização.");
+  }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 15000 });
+}
+function abrirMenuLocal() {
+  const menu = $("menuLocal");
+  const abre = menu.classList.contains("hidden");
+  show("menuLocal", abre);
+  if (!abre) return;
+  atualizarLocal(false);
+  const box = $("menuRecentes");
+  box.textContent = "";
+  sugestoesRecentes().slice(0, 4).forEach(r => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = "🕒 " + (r.titulo || r.nome);
+    b.onclick = () => { fecharMenuLocal(); escolherDestino(r); };
+    box.append(b);
+  });
+}
+function fecharMenuLocal() { show("menuLocal", false); }
+function usarGpsComoRetirada() {
+  fecharMenuLocal();
+  atualizarLocal(true);
+  abrirPlano();
+  if (aqui && aqui.nome && dentroPelotas(aqui.lat, aqui.lng)) {
+    definirLado("origem", { nome: aqui.nome, lat: aqui.lat, lng: aqui.lng, numero: "S/N", tipo: "poi" });
+  }
 }
 
 // ---------- Início: lugares salvos, recentes, serviços ----------
@@ -91,6 +127,59 @@ function recentes() {
     if (out.length >= 8) break;
   }
   return out;
+}
+function recentesLocais() {
+  const lista = guardar.ler("recentes_end");
+  return Array.isArray(lista) ? lista.filter(e => e && e.nome && e.lat != null) : [];
+}
+function lembrarRecente(e) {
+  if (!e || !e.nome || e.lat == null) return;
+  const item = {
+    nome: e.nome, lat: e.lat, lng: e.lng, numero: e.numero && e.numero !== "S/N" ? e.numero : "",
+    complemento: e.complemento || "", bairro: e.bairro || "", cidade: e.cidade || "Pelotas", uf: e.uf || "RS",
+    cep: e.cep || "", tipo: "recente"
+  };
+  const linhas = linhasEndereco(item);
+  item.titulo = linhas.titulo;
+  item.subtitulo = linhas.subtitulo;
+  const chave = semAcento(item.nome) + "|" + item.numero;
+  const lista = recentesLocais().filter(x => semAcento(x.nome) + "|" + (x.numero || "") !== chave);
+  lista.unshift(item);
+  guardar.gravar("recentes_end", lista.slice(0, 8));
+}
+function sugestoesRecentes() {
+  const vistos = new Set(), out = [];
+  function add(e) {
+    if (!e || e.lat == null || !e.nome) return;
+    const k = semAcento(e.nome) + "|" + (e.numero || "");
+    if (vistos.has(k)) return;
+    vistos.add(k);
+    const linhas = e.titulo ? { titulo: e.titulo, subtitulo: e.subtitulo || "" } : linhasEndereco(e);
+    out.push(Object.assign({}, e, { tipo: "recente", titulo: linhas.titulo, subtitulo: linhas.subtitulo || "Pelotas - RS" }));
+  }
+  recentesLocais().forEach(add);
+  recentes().forEach(add);
+  return out.slice(0, 8);
+}
+function ligarBusca() {
+  if ($("origem").dataset.busca) return;
+  $("origem").dataset.busca = "1";
+  autocompletar($("origem"), $("sugOrigem"), e => definirLado("origem", e), t => marcarNoMapa("origem", t), { bias: biasBusca, recentes: sugestoesRecentes });
+  autocompletar($("destino"), $("sugDestino"), e => definirLado("destino", e), t => marcarNoMapa("destino", t), { bias: biasBusca, recentes: sugestoesRecentes });
+  $("origem").addEventListener("input", () => { if ($("origem").dataset.escolhido !== "1") limparDetalhe("origem"); atualizarLimpar(); });
+  $("destino").addEventListener("input", () => { if ($("destino").dataset.escolhido !== "1") limparDetalhe("destino"); atualizarLimpar(); });
+  $("limparOrigem").onclick = () => limparCampo("origem");
+  $("limparDestino").onclick = () => limparCampo("destino");
+  ligarSn("origem"); ligarSn("destino");
+  atualizarLimpar();
+}
+function biasBusca() {
+  if (aqui && dentroPelotas(aqui.lat, aqui.lng)) return [aqui.lat, aqui.lng];
+  return null;
+}
+function nomeCheio(e) {
+  if (!e) return "";
+  return [e.nome, e.bairro].filter(Boolean).join(" · ");
 }
 function itemLugar(icone, titulo, sub, onclick) {
   const b = document.createElement("button"); b.className = "item-lista"; b.onclick = onclick;
@@ -128,10 +217,9 @@ function maisTarde() { toast("Agendamento chega em breve! Por enquanto, as entre
 // ---------- Planejar ----------
 function abrirPlano() {
   telaSobre("telaPlano", true);
-  if (!origem && aqui && aqui.nome) {
-    origem = { nome: aqui.nome, lat: aqui.lat, lng: aqui.lng, numero: "", complemento: "" };
+  if (!origem && aqui && aqui.nome && dentroPelotas(aqui.lat, aqui.lng)) {
+    origem = { nome: aqui.nome, lat: aqui.lat, lng: aqui.lng, numero: "S/N", complemento: "", tipo: "poi" };
     $("origem").value = aqui.nome; $("origem").dataset.escolhido = "1";
-    preencherDetalhe("origem", origem);
   }
   const lista = $("listaRecentes"); lista.textContent = "";
   const base = origem || aqui;
@@ -180,30 +268,90 @@ function limparDetalhe(lado) {
   $("comp" + s).value = "";
   if (lado === "origem") origem = null; else destino = null;
 }
+function limparCampo(lado) {
+  const campo = $(lado);
+  campo.value = "";
+  campo.dataset.escolhido = "";
+  limparDetalhe(lado);
+  const lista = $("sug" + sufixo(lado));
+  if (lista) lista.innerHTML = "";
+  atualizarLimpar();
+  if (campo._ejaRecentes) campo._ejaRecentes();
+  campo.focus();
+}
+function atualizarLimpar() {
+  show("limparOrigem", !!$("origem").value);
+  show("limparDestino", !!$("destino").value);
+  if ($("limparPino") && $("buscaPino")) show("limparPino", !!$("buscaPino").value);
+}
+function numeroDoTexto(e) {
+  return { numero: e.numero || "S/N", complemento: e.complemento || "" };
+}
 function definirLado(lado, e) {
-  const obj = { nome: e.nome, lat: e.lat, lng: e.lng, numero: e.numero || "", complemento: e.complemento || "" };
+  const extra = numeroDoTexto(e);
+  const obj = {
+    nome: e.nome, lat: e.lat, lng: e.lng, numero: extra.numero, complemento: extra.complemento,
+    bairro: e.bairro || "", cidade: e.cidade || "", uf: e.uf || "", cep: e.cep || "", tipo: e.tipo || ""
+  };
   if (lado === "origem") origem = obj; else destino = obj;
-  $(lado).value = e.nome;
-  $(lado).dataset.escolhido = "1";
-  preencherDetalhe(lado, obj);
+  const campo = $(lado);
+  if (campo) {
+    campo.value = e.titulo || e.nome || "";
+    campo.dataset.escolhido = "1";
+  }
+  lembrarRecente(obj);
+  atualizarLimpar();
   if (lado === "destino" && !origem && !definindo) {
     if ($("telaPlano").classList.contains("hidden")) abrirPlano();
     if (!origem) { toast("Agora escolha o endereço de retirada."); $("origem").focus(); return; }
   }
-  if (!definindo && origem && destino && origem.lat != null && destino.lat != null) abrirConfirmar();
-  else if (!obj.numero) $("num" + sufixo(lado)).focus();
+  if (definindo) {
+    preencherDetalhe(lado, obj);
+    return;
+  }
+  if (origem && destino && origem.lat != null && destino.lat != null && origem.numero && destino.numero) abrirConfirmar();
+}
+function limparDetalheVisual(lado) {
+  const s = sufixo(lado);
+  show("det" + s, false);
+  $("sn" + s).checked = false;
+  $("num" + s).disabled = false;
+  $("num" + s).value = "";
+  $("comp" + s).value = "";
+}
+function trocarPontos() {
+  const o = origem, d = destino;
+  const vo = $("origem").value, vd = $("destino").value;
+  const eo = $("origem").dataset.escolhido, ed = $("destino").dataset.escolhido;
+  origem = d; destino = o;
+  $("origem").value = vd; $("destino").value = vo;
+  $("origem").dataset.escolhido = ed || "";
+  $("destino").dataset.escolhido = eo || "";
+  if (origem && origem.numero) preencherDetalhe("origem", origem); else limparDetalheVisual("origem");
+  if (destino && destino.numero) preencherDetalhe("destino", destino); else limparDetalheVisual("destino");
+  atualizarLimpar();
 }
 function alojarNumeros(noMapa) {
   const o = $("detOrigem"), d = $("detDestino");
   if (!o || !d) return;
-  if (noMapa && $("numsMapa")) { $("numsMapa").append(o, d); show("detOrigem", !!origem); show("detDestino", !!destino); }
-  else {
+  if (noMapa && $("numsMapa")) {
+    $("numsMapa").append(o, d);
+    if (origem) preencherDetalhe("origem", origem); else show("detOrigem", false);
+    if (destino) preencherDetalhe("destino", destino); else show("detDestino", false);
+  } else {
     if ($("slotOrigem")) $("slotOrigem").append(o);
     if ($("slotDestino")) $("slotDestino").append(d);
+    if (!definindo) { show("detOrigem", false); show("detDestino", false); }
   }
 }
 function lerDetalhe(lado) {
   const s = sufixo(lado);
+  const painel = $("det" + s);
+  if (painel && painel.classList.contains("hidden")) {
+    const obj = lado === "origem" ? origem : destino;
+    if (!obj) return { ok: false, erro: "Escolha o endereço." };
+    return validarDetalhe(obj.numero === "S/N" ? "" : (obj.numero || ""), obj.numero === "S/N", obj.complemento);
+  }
   return validarDetalhe($("num" + s).value, $("sn" + s).checked, $("comp" + s).value);
 }
 function atualizarBotaoPlano() {
@@ -236,67 +384,163 @@ function continuarPlano() {
 
 // ---------- Escolher no mapa (pino arrastável) ----------
 let pinoLado = "destino", pinoTextoFixo = "", pinoAtual = null, pinoBuscaLigada = false;
+let pinoAlvo = null, cameraPropria = 0, pinoNomeando = false, pinoSeq = 0, nomearTimer = null;
 function marcarNoMapa(lado, texto) { abrirPinoMapa(lado, texto); }
+function paddingPino() {
+  const el = mapaPino.getContainer();
+  const H = el.clientHeight || window.innerHeight || 700;
+  const W = el.clientWidth || window.innerWidth || 360;
+  const folha = $("folhaPino");
+  const fh = folha ? (parseFloat(folha.style.height) || folha.getBoundingClientRect().height || H * 0.42) : H * 0.42;
+  const top = 84;
+  let bottom = Math.max(0, fh);
+  if (top + bottom > H - 96) bottom = Math.max(0, H - 96 - top);
+  return { top, bottom, left: Math.min(24, W * 0.06), right: Math.min(24, W * 0.06) };
+}
+function posicionarPinoVisual() {
+  const pin = document.querySelector("#telaPino .pino-central");
+  if (!pin || !mapaPino) return { x: 0, y: 0 };
+  const el = mapaPino.getContainer();
+  const H = el.clientHeight || window.innerHeight || 700;
+  const W = el.clientWidth || window.innerWidth || 360;
+  const pad = paddingPino();
+  const y = (pad.top + H - pad.bottom) / 2;
+  const x = (pad.left + W - pad.right) / 2;
+  pin.style.top = y + "px";
+  pin.style.left = x + "px";
+  return { x, y };
+}
+function pontoDoPino() {
+  if (!mapaPino) return { lat: PELOTAS[0], lng: PELOTAS[1] };
+  const pt = posicionarPinoVisual();
+  return mapaPino.containerPointToLatLng([pt.x, pt.y]);
+}
+function centralizarPino(ll, zoom, duracao) {
+  if (!mapaPino || !ll) return;
+  pinoAlvo = { lat: +ll.lat, lng: +ll.lng };
+  posicionarPinoVisual();
+  cameraPropria++;
+  mapaPino.setView([pinoAlvo.lat, pinoAlvo.lng], zoom == null ? mapaPino.getZoom() : zoom, {
+    padding: paddingPino(), duration: duracao || 0, bearing: 0, pitch: 0
+  });
+  setTimeout(() => { cameraPropria = Math.max(0, cameraPropria - 1); }, (duracao || 0) + 80);
+}
+function atualizarBotaoPino() {
+  const btn = $("btnPino");
+  const fora = pinoAtual && pinoAtual.fora;
+  if (btn) btn.disabled = !!(pinoNomeando || !pinoAtual || !pinoAtual.nome || fora);
+  show("pinoFora", !!fora);
+}
+function agendarNomear() {
+  clearTimeout(nomearTimer);
+  pinoNomeando = true;
+  atualizarBotaoPino();
+  $("pinoNome").textContent = "Buscando endereço…";
+  nomearTimer = setTimeout(nomearPino, 350);
+}
 function abrirPinoMapa(lado, texto) {
   pinoLado = lado === "origem" ? "origem" : "destino";
   pinoTextoFixo = texto || "";
   telaSobre("telaPino", true);
   if (!mapaPino) {
-    mapaPino = criarMapa("mapaPino");
-    mapaPino.on("moveend", nomearPino);
+    mapaPino = criarMapa("mapaPino", { rotacao: false, limiteCidade: true, zoom: 16 });
+    mapaPino.on("moveend", () => {
+      if ($("telaPino").classList.contains("hidden")) return;
+      const novo = pontoDoPino();
+      const mesmo = pinoAlvo && Math.abs(novo.lat - pinoAlvo.lat) < 0.00004 && Math.abs(novo.lng - pinoAlvo.lng) < 0.00004;
+      if (cameraPropria > 0 || mesmo) {
+        if (mesmo) pinoAlvo = { lat: novo.lat, lng: novo.lng };
+        return;
+      }
+      pinoTextoFixo = "";
+      pinoAlvo = novo;
+      agendarNomear();
+    });
   }
   if (!pinoBuscaLigada) {
     pinoBuscaLigada = true;
     autocompletar($("buscaPino"), $("sugPino"), e => {
       pinoTextoFixo = "";
-      pinoAtual = { lat: e.lat, lng: e.lng, nome: e.nome };
-      $("pinoNome").textContent = e.nome;
-      $("buscaPino").value = e.nome;
-      mapaPino.setView([e.lat, e.lng], 17);
-    }, t => { pinoTextoFixo = t; $("buscaPino").value = t; nomearPino(); });
+      pinoAtual = { lat: e.lat, lng: e.lng, nome: e.nome, numero: e.numero || "", complemento: e.complemento || "", bairro: e.bairro || "", fora: false };
+      $("pinoNome").textContent = e.titulo || e.nome;
+      $("buscaPino").value = e.titulo || e.nome;
+      atualizarLimpar();
+      pinoNomeando = false;
+      clearTimeout(nomearTimer);
+      centralizarPino(e, 17, 0);
+      atualizarBotaoPino();
+    }, t => {
+      pinoTextoFixo = t;
+      $("buscaPino").value = t;
+      atualizarLimpar();
+      agendarNomear();
+    }, { bias: () => pinoAlvo && dentroPelotas(pinoAlvo.lat, pinoAlvo.lng) ? [pinoAlvo.lat, pinoAlvo.lng] : biasBusca() });
+    $("buscaPino").addEventListener("input", atualizarLimpar);
+    $("limparPino").onclick = () => { $("buscaPino").value = ""; $("sugPino").innerHTML = ""; pinoTextoFixo = ""; atualizarLimpar(); };
   }
   $("buscaPino").value = pinoTextoFixo;
+  atualizarLimpar();
   const titulo = $("folhaPino").querySelector("h2");
   if (titulo) titulo.textContent = pinoLado === "origem" ? "Marque a retirada" : "Marque o destino";
+  const c = (pinoLado === "origem" ? origem : destino) || aqui;
+  const ll = c && c.lat != null ? { lat: c.lat, lng: c.lng } : { lat: PELOTAS[0], lng: PELOTAS[1] };
+  if (c && c.nome && !texto) {
+    pinoAtual = { lat: ll.lat, lng: ll.lng, nome: c.nome, numero: c.numero || "S/N", complemento: c.complemento || "", bairro: c.bairro || "" };
+    $("pinoNome").textContent = c.nome;
+    pinoNomeando = false;
+  } else if (texto) {
+    pinoAtual = { lat: ll.lat, lng: ll.lng, nome: texto };
+    $("pinoNome").textContent = texto;
+    pinoNomeando = false;
+  } else pinoAtual = null;
+  atualizarBotaoPino();
   setTimeout(() => {
     ajustarMapa(mapaPino);
     folhaIr($("folhaPino"), 1);
-    const c = (pinoLado === "origem" ? origem : destino) || aqui;
-    mapaPino.setView(c ? [c.lat, c.lng] : PELOTAS, 16);
-    nomearPino();
+    pintarPontoAzul(mapaPino, "pino");
+    centralizarPino(ll, 17, 0);
+    if (!pinoAtual || !pinoAtual.nome) agendarNomear();
   }, 80);
 }
-function pontoDoPino() {
-  const el = mapaPino.getContainer();
-  const w = el.clientWidth || window.innerWidth;
-  const h = el.clientHeight || window.innerHeight;
-  const folha = $("folhaPino");
-  const fh = folha ? (parseFloat(folha.style.height) || folha.getBoundingClientRect().height) : h * 0.4;
-  const y = Math.max(72, (h - fh) / 2);
-  const pin = document.querySelector("#telaPino .pino-central");
-  if (pin) pin.style.top = y + "px";
-  return mapaPino.containerPointToLatLng([w / 2, y]);
-}
 async function nomearPino() {
-  if (!mapaPino) return;
+  if (!mapaPino || $("telaPino").classList.contains("hidden")) return;
   const c = pontoDoPino();
-  if (pinoTextoFixo) {
-    pinoAtual = { lat: c.lat, lng: c.lng, nome: pinoTextoFixo };
-    $("pinoNome").textContent = pinoTextoFixo;
+  pinoAlvo = { lat: c.lat, lng: c.lng };
+  const seq = ++pinoSeq;
+  if (!dentroPelotas(c.lat, c.lng)) {
+    pinoNomeando = false;
+    pinoAtual = { lat: c.lat, lng: c.lng, nome: null, fora: true };
+    $("pinoNome").textContent = "Fora de Pelotas";
+    atualizarBotaoPino();
     return;
   }
-  pinoAtual = { lat: c.lat, lng: c.lng, nome: null };
+  if (pinoTextoFixo) {
+    pinoNomeando = false;
+    pinoAtual = { lat: c.lat, lng: c.lng, nome: pinoTextoFixo, fora: false };
+    $("pinoNome").textContent = pinoTextoFixo;
+    atualizarBotaoPino();
+    return;
+  }
+  pinoNomeando = true;
+  atualizarBotaoPino();
   $("pinoNome").textContent = "Buscando endereço…";
-  const n = await nomeDoPonto(c.lat, c.lng);
-  if (!pinoAtual || pinoAtual.lat !== c.lat) return;
-  pinoAtual.nome = n || "Ponto no mapa";
+  const n = await nomeDoPonto(c.lat, c.lng, { timeout: 4000 });
+  if (seq !== pinoSeq) return;
+  const agora = pontoDoPino();
+  if (Math.abs(agora.lat - c.lat) > 0.00015 || Math.abs(agora.lng - c.lng) > 0.00015) return;
+  pinoNomeando = false;
+  pinoAtual = { lat: c.lat, lng: c.lng, nome: n || "Ponto no mapa", fora: false };
   $("pinoNome").textContent = pinoAtual.nome;
+  atualizarBotaoPino();
 }
-function fecharPino() { telaSobre("telaPino", false); }
+function fecharPino() { clearTimeout(nomearTimer); telaSobre("telaPino", false); }
 function confirmarPino() {
-  if (!pinoAtual || !pinoAtual.nome) return;
-  if (!dentroPelotas(pinoAtual.lat, pinoAtual.lng)) return toast("Por enquanto atendemos só Pelotas.");
-  const ponto = { nome: pinoAtual.nome, lat: pinoAtual.lat, lng: pinoAtual.lng };
+  if (pinoNomeando || !pinoAtual || !pinoAtual.nome) return;
+  if (pinoAtual.fora || !dentroPelotas(pinoAtual.lat, pinoAtual.lng)) return toast("Por enquanto atendemos só Pelotas.");
+  const ponto = {
+    nome: pinoAtual.nome, lat: pinoAtual.lat, lng: pinoAtual.lng,
+    numero: pinoAtual.numero || "S/N", complemento: pinoAtual.complemento || "", bairro: pinoAtual.bairro || "", tipo: "poi"
+  };
   const lado = pinoLado;
   pinoTextoFixo = "";
   fecharPino();
@@ -314,33 +558,73 @@ function alturaFolha(sel) {
 function enquadrar(m, pts, folhaSel, duracao) {
   enquadrarMapa(m, pts, alturaFolha(folhaSel), duracao);
 }
+const pontosAzuis = {};
+function pintarPontoAzul(mapa, chave) {
+  if (!mapa || !aqui || !dentroPelotas(aqui.lat, aqui.lng)) return;
+  if (pontosAzuis[chave]) pontosAzuis[chave].remove();
+  pontosAzuis[chave] = colocarMarcador(mapa, aqui.lat, aqui.lng, htmlPontoUsuario());
+}
+function pintarPontosAzuis() {
+  if (mapaPino && !$("telaPino").classList.contains("hidden")) pintarPontoAzul(mapaPino, "pino");
+  if (mapa && !$("telaConfirmar").classList.contains("hidden")) pintarPontoAzul(mapa, "confirmar");
+  if (mapaPed && !$("pedido").classList.contains("hidden")) pintarPontoAzul(mapaPed, "pedido");
+}
+function irParaMim(qual) {
+  if (!aqui || aqui.lat == null) { atualizarLocal(true); return; }
+  if (!dentroPelotas(aqui.lat, aqui.lng)) { toast("Você está fora de Pelotas."); return; }
+  if (qual === "pino" && mapaPino) {
+    pinoTextoFixo = "";
+    pinoNomeando = false;
+    clearTimeout(nomearTimer);
+    pinoAtual = { lat: aqui.lat, lng: aqui.lng, nome: aqui.nome || "Minha localização", numero: "S/N", fora: false };
+    $("pinoNome").textContent = pinoAtual.nome;
+    atualizarBotaoPino();
+    centralizarPino(aqui, 17, 350);
+    return;
+  }
+  const m = qual === "pedido" ? mapaPed : mapa;
+  if (!m) return;
+  if (qual === "pedido") { seguirPedido = false; $("pedido").classList.add("mapa-livre"); }
+  else $("telaConfirmar").classList.add("mapa-livre");
+  if (m.easePara) m.easePara({ lat: aqui.lat, lng: aqui.lng, zoom: 16, bearing: 0, pitch: 0, duration: 450 });
+  else m.setView([aqui.lat, aqui.lng], 16, { bearing: 0, pitch: 0 });
+}
 let etaMin = null;
 function desenharConfirmacao() {
   if (!mapa || !origem || !destino) return;
   camadas.forEach(c => c.remove());
   camadas = [
-    colocarMarcador(mapa, origem.lat, origem.lng, htmlRetirada(origem.nome, etaMin)),
-    colocarMarcador(mapa, destino.lat, destino.lng, htmlEntrega(destino.nome))
+    colocarMarcador(mapa, origem.lat, origem.lng, htmlRetirada(nomeCheio(origem), etaMin)),
+    colocarMarcador(mapa, destino.lat, destino.lng, htmlEntrega(nomeCheio(destino)))
   ];
-  const pts = rota && rota.linha && rota.linha.length > 1 ? rota.linha : [[origem.lat, origem.lng], [destino.lat, destino.lng]];
+  pintarPontoAzul(mapa, "confirmar");
+  const reta = [[origem.lat, origem.lng], [destino.lat, destino.lng]];
+  const pts = rota && rota.linha && rota.linha.length > 1 ? rota.linha : reta;
   if (rota && rota.linha && rota.linha.length > 1) camadas.push(colocarLinha(mapa, rota.linha, ROTA));
+  else camadas.push(colocarLinha(mapa, reta, { color: "#111111", weight: 4, opacity: 0.85, tracejada: true }));
   enquadrar(mapa, pts, "#deliveryForm");
+}
+function nortear(m) {
+  if (!m || !m.getCenter || !m.setView) return;
+  const c = m.getCenter();
+  m.setView([c.lat, c.lng], m.getZoom(), { bearing: 0, pitch: 0, duration: 0 });
 }
 function verRotaConfirmada() {
   $("telaConfirmar").classList.remove("mapa-livre");
+  nortear(mapa);
   desenharConfirmacao();
 }
 
 // ---------- Confirmar com preço ----------
 async function abrirConfirmar() {
   telaSobre("telaConfirmar", true);
-  $("resOrigem").textContent = textoEndereco(origem.nome, origem.numero, origem.complemento);
-  $("resDestino").textContent = textoEndereco(destino.nome, destino.numero, destino.complemento);
+  $("resOrigem").textContent = textoEndereco(nomeCheio(origem), origem.numero, origem.complemento);
+  $("resDestino").textContent = textoEndereco(nomeCheio(destino), destino.numero, destino.complemento);
   $("tagCategoria").textContent = categoria.nome;
   $("tipo").innerHTML = ""; categoria.itens.filter(i => !/NÃO/.test(i)).forEach(i => $("tipo").add(new Option(i, categoria.nome + ": " + i)));
   alojarNumeros(true);
   if (!mapa) {
-    mapa = criarMapa("mapa");
+    mapa = criarMapa("mapa", { rotacao: false, limiteCidade: true });
     mapa.on("dragstart", () => { $("telaConfirmar").classList.add("mapa-livre"); });
   }
   folhaIr($("deliveryForm"), 1);
@@ -354,9 +638,9 @@ async function abrirConfirmar() {
   const { data, error } = await db.rpc("cotar_preco", params());
   if (error) { $("km").textContent = erroMsg(error); return; }
   $("valor").textContent = money(data[0].preco);
-  const minPreco = Math.max(8, Math.round(Number(data[0].distancia_km) * 3 + 6));
-  if (!etaMin) etaMin = minPreco;
-  $("km").textContent = Number(data[0].distancia_km).toLocaleString("pt-BR") + " km" + (data[0].fonte === "rota" ? " pela rua" : " (estimado)") + " · ~" + (etaMin || minPreco) + " min";
+  const km = Number(data[0].distancia_km).toLocaleString("pt-BR");
+  const pelaRua = data[0].fonte === "rota" && rota;
+  $("km").textContent = km + " km" + (pelaRua ? " pela rua" : " · distância estimada") + (etaMin ? " · ~" + etaMin + " min" : "");
   desenharConfirmacao();
 }
 function voltarDoConfirmar() { alojarNumeros(false); telaSobre("telaConfirmar", false); abrirPlano(); }
@@ -364,23 +648,33 @@ function params() {
   return { p_ret_lat: origem.lat, p_ret_lng: origem.lng, p_ent_lat: destino.lat, p_ent_lng: destino.lng, p_rota_km: rota ? Number(rota.km.toFixed(2)) : null };
 }
 
+["numOrigem", "numDestino", "compOrigem", "compDestino"].forEach(id => {
+  const el = $(id);
+  if (el) el.addEventListener("keydown", ev => { if (ev.key === "Enter") ev.preventDefault(); });
+});
+function rumoEntre(a, b) {
+  const rad = Math.PI / 180;
+  const y = Math.sin((b.lng - a.lng) * rad) * Math.cos(b.lat * rad);
+  const x = Math.cos(a.lat * rad) * Math.sin(b.lat * rad) - Math.sin(a.lat * rad) * Math.cos(b.lat * rad) * Math.cos((b.lng - a.lng) * rad);
+  return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+}
 $("deliveryForm").addEventListener("submit", async ev => {
   ev.preventDefault();
   const a = lerDetalhe("origem"), b = lerDetalhe("destino");
-  if (!a.ok) { toast("Retirada: " + a.erro); voltarDoConfirmar(); $("numOrigem").focus(); return; }
-  if (!b.ok) { toast("Entrega: " + b.erro); voltarDoConfirmar(); $("numDestino").focus(); return; }
+  if (!a.ok) { toast("Retirada: " + a.erro); $("numOrigem").focus(); return; }
+  if (!b.ok) { toast("Entrega: " + b.erro); $("numDestino").focus(); return; }
   origem.numero = a.numero; origem.complemento = a.complemento;
   destino.numero = b.numero; destino.complemento = b.complemento;
   const botao = $("btnConfirmar"); botao.disabled = true;
   try {
     const { data, error } = await db.rpc("criar_pedido", {
-      p_retirada: origem.nome.trim(), p_entrega: destino.nome.trim(), p_item: $("tipo").value.slice(0, 60),
+      p_retirada: nomeCheio(origem).trim(), p_entrega: nomeCheio(destino).trim(), p_item: $("tipo").value.slice(0, 60),
       p_ret_numero: origem.numero, p_ret_complemento: origem.complemento, p_ent_numero: destino.numero, p_ent_complemento: destino.complemento,
       ...params() });
     if (error) throw error;
     const p = data[0];
     telaSobre("telaConfirmar", false); telaSobre("telaPlano", false);
-    mostrarPedido({ id: p.pedido_id, retirada: origem.nome.trim(), entrega: destino.nome.trim(), item: $("tipo").value, preco: p.valor,
+    mostrarPedido({ id: p.pedido_id, retirada: nomeCheio(origem).trim(), entrega: nomeCheio(destino).trim(), item: $("tipo").value, preco: p.valor,
       status: "procurando", codigo: p.cod, ret_lat: origem.lat, ret_lng: origem.lng, ent_lat: destino.lat, ent_lng: destino.lng,
       ret_numero: origem.numero, ret_complemento: origem.complemento, ent_numero: destino.numero, ent_complemento: destino.complemento });
   } catch (e) { toast("Não foi possível pedir: " + erroMsg(e), 4000); }
@@ -401,7 +695,7 @@ function enquadrarPedido() {
   const pts = pontosDoPedido();
   if (mapaPed && pts.length) enquadrar(mapaPed, pts, "#folhaPedido");
 }
-function verRotaPedido() { seguirPedido = true; $("pedido").classList.remove("mapa-livre"); enquadrarPedido(); }
+function verRotaPedido() { seguirPedido = true; $("pedido").classList.remove("mapa-livre"); nortear(mapaPed); enquadrarPedido(); }
 
 async function mostrarPedido(p) {
   pedido = p; ultimoS = null; seguirPedido = true;
@@ -409,7 +703,7 @@ async function mostrarPedido(p) {
   $("resumo").textContent = textoEndereco(p.retirada, p.ret_numero, p.ret_complemento) + " → " +
     textoEndereco(p.entrega, p.ent_numero, p.ent_complemento) + " · " + p.item + " · " + money(p.preco);
   if (!mapaPed) {
-    mapaPed = criarMapa("mapaPedido");
+    mapaPed = criarMapa("mapaPedido", { rotacao: false, limiteCidade: true });
     mapaPed.on("dragstart", () => { seguirPedido = false; $("pedido").classList.add("mapa-livre"); });
   } else setTimeout(() => ajustarMapa(mapaPed), 60);
   if (p.ret_lat == null) {
@@ -423,9 +717,11 @@ async function mostrarPedido(p) {
   if (p.ret_lat != null && p.ent_lat != null) {
     camadasPed.push(colocarMarcador(mapaPed, p.ret_lat, p.ret_lng, htmlRetirada(p.retirada)));
     camadasPed.push(colocarMarcador(mapaPed, p.ent_lat, p.ent_lng, htmlEntrega(p.entrega)));
+    pintarPontoAzul(mapaPed, "pedido");
     calcularRota({ lat: p.ret_lat, lng: p.ret_lng }, { lat: p.ent_lat, lng: p.ent_lng }).then(r => {
-      if (!r || !mapaPed || pedido !== p) return;
-      camadasPed.push(colocarLinha(mapaPed, r.linha, ROTA));
+      if (!mapaPed || pedido !== p) return;
+      const reta = [[+p.ret_lat, +p.ret_lng], [+p.ent_lat, +p.ent_lng]];
+      camadasPed.push(colocarLinha(mapaPed, r && r.linha ? r.linha : reta, r && r.linha ? ROTA : { color: "#111111", weight: 4, opacity: 0.85, tracejada: true }));
       if (seguirPedido) enquadrarPedido();
     });
   }
@@ -435,16 +731,20 @@ async function mostrarPedido(p) {
   if (canal) db.removeChannel(canal);
   canal = db.channel("pedido-" + p.id)
     .on("postgres_changes", { event: "UPDATE", schema: "public", table: "pedidos", filter: "id=eq." + p.id }, atualizarStatus)
-    .on("postgres_changes", { event: "*", schema: "public", table: "posicoes", filter: "pedido_id=eq." + p.id }, m => m.new && m.new.lat && moverMoto(m.new.lat, m.new.lng))
+    .on("postgres_changes", { event: "*", schema: "public", table: "posicoes", filter: "pedido_id=eq." + p.id }, m => m.new && m.new.lat && moverMoto(m.new.lat, m.new.lng, m.new.heading || m.new.bearing || m.new.rumo))
     .subscribe();
   sincronizarChatCliente();
 }
-function moverMoto(lat, lng) {
+function moverMoto(lat, lng, heading) {
   if (!mapaPed || lat == null || lng == null) return;
   const primeiro = !pedido.motoPos;
+  const anterior = pedido.motoPos;
   pedido.motoPos = [+lat, +lng];
   if (!motoMarker) motoMarker = colocarMarcador(mapaPed, pedido.motoPos[0], pedido.motoPos[1], htmlMoto());
   else motoMarker.setLatLng(pedido.motoPos);
+  let rumo = heading == null || heading !== heading ? null : Number(heading);
+  if (rumo == null && anterior) rumo = rumoEntre({ lat: anterior[0], lng: anterior[1] }, { lat: +lat, lng: +lng });
+  if (rumo != null) orientarMarcador(motoMarker, rumo, mapaPed.getBearing ? mapaPed.getBearing() : 0);
   let fora = false;
   try { fora = !mapaPed.getBounds().pad(-0.05).contains(pedido.motoPos); } catch (e) { fora = true; }
   if (seguirPedido && (primeiro || fora)) enquadrarPedido();
@@ -470,7 +770,7 @@ async function atualizarStatus() {
   ultimoS = s.status;
   if (s.status === "aceito" || s.status === "coletado") {
     const { data: pos } = await db.from("posicoes").select("lat,lng").eq("pedido_id", pedido.id).maybeSingle();
-    if (pos) moverMoto(pos.lat, pos.lng);
+    if (pos) moverMoto(pos.lat, pos.lng, pos.heading || pos.bearing || pos.rumo);
   } else if (motoMarker) { motoMarker.remove(); motoMarker = null; }
   if (s.status === "entregue" || s.status === "cancelado") {
     show("btnCancelar", false); show("btnNovo", true); show("btnWhats", false);
@@ -557,7 +857,10 @@ window.addEventListener("eja-folha", ev => {
   if (!f) return;
   const duracao = ev.detail.arrastando ? 0 : undefined;
   if (f.id === "folhaPedido" && pedido && mapaPed && seguirPedido) enquadrar(mapaPed, pontosDoPedido(), "#folhaPedido", duracao);
-  if (f.id === "folhaPino" && mapaPino && !$("telaPino").classList.contains("hidden")) nomearPino();
+  if (f.id === "folhaPino" && mapaPino && !$("telaPino").classList.contains("hidden")) {
+    posicionarPinoVisual();
+    if (pinoAlvo) centralizarPino(pinoAlvo, mapaPino.getZoom(), 0);
+  }
   if (f.id === "deliveryForm" && mapa && origem && destino) {
     const pts = rota && rota.linha ? rota.linha : [[origem.lat, origem.lng], [destino.lat, destino.lng]];
     enquadrar(mapa, pts, "#deliveryForm", duracao);

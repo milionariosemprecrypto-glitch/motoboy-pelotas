@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import vm from "node:vm";
 
-const context = vm.createContext({ console, Date, Math, Object, isFinite, Number });
+const context = vm.createContext({ console, Date, Math, Object, isFinite, Number, setTimeout, clearTimeout });
 for (const f of ["apps/shared/geo.js", "apps/shared/navegacao.js", "apps/shared/chat.js"]) {
   vm.runInContext(fs.readFileSync(f, "utf8"), context, { filename: f });
 }
@@ -37,6 +37,22 @@ assert.equal(run(`expandirAbrev("R. Gonçalves Chaves")`), "Rua Gonçalves Chave
 assert.equal(run(`expandirAbrev("est da costa")`), "Estrada da costa");
 assert.ok(run(`consultasEndereco("Av Brasil")`).includes("Avenida Brasil"));
 assert.ok(run(`consultasEndereco("Av Brasil")`).includes("avenida brasil"));
+assert.equal(run(`separarNumero("Av Brasil 1234").numero`), "1234");
+assert.equal(run(`separarNumero("Av Brasil 1234").texto`), "Av Brasil");
+assert.equal(run(`separarNumero("Av Brasil nº 1500").numero`), "1500");
+assert.equal(run(`separarNumero("Av Brasil, 12-B").numero`), "12-B");
+assert.equal(run(`separarNumero("Av Brasil 120 - fundos").complemento`), "fundos");
+assert.equal(run(`separarNumero("Rua XV de Novembro").numero`), "");
+assert.equal(run(`separarNumero("Rua 15 de Novembro").numero`), "");
+assert.ok(run(`consultasEndereco("Av Brasil 1234")`).includes("Avenida Brasil"));
+assert.ok(!run(`consultasEndereco("Av Brasil 1234")`).some(q => /1234/.test(q)), "o número não vai para o Photon");
+assert.ok(run(`consultasEndereco("Rua XV de Novembro")`).some(q => /Quinze de Novembro/.test(q)));
+assert.ok(run(`consultasEndereco("estacao")`).some(q => /Rodoviária|Terminal/.test(q)));
+assert.equal(run(`cidadePelotas({})`), false);
+assert.equal(run(`cidadePelotas({ city: "" })`), false);
+assert.equal(run(`cidadePelotas({ city: "São Lourenço do Sul" })`), false);
+assert.equal(run(`cidadePelotas({ city: "Pelotas" })`), true);
+assert.equal(run(`textoEndereco("Avenida Brasil", "120", null)`), "Avenida Brasil, nº 120");
 
 const osrm = {
   code: "Ok",
@@ -164,5 +180,36 @@ const buscaMock = await run(`(async () => {
 assert.ok(buscaMock.urls.some(u => /photon/.test(u.url) && /Avenida%20Brasil/.test(u.url) && !/Pelotas/.test(u.url)), "Photon não recebe o sufixo Pelotas");
 assert.ok(buscaMock.urls.some(u => /nominatim/.test(u.url) && /E-Ja/.test(u.ua)), "Nominatim só entra se o Photon vier vazio, com User-Agent");
 assert.match(buscaMock.nome, /Avenida Brasil/);
+
+const comNumero = await run(`(async () => {
+  const buscar = async (url) => {
+    if (String(url).includes("nominatim")) return { ok: true, json: async () => [] };
+    return { ok: true, json: async () => ({ features: [{
+      geometry: { coordinates: [-52.352, -31.774] },
+      properties: { name: "Avenida Brasil", housenumber: "50", district: "Centro", city: "Pelotas", state: "Rio Grande do Sul", postcode: "96025-000", osm_key: "highway", osm_value: "secondary" }
+    }] }) };
+  };
+  const lista = await buscarEnderecos("Av Brasil 1234", { buscar, bias: [-31.77, -52.34] });
+  return lista[0];
+})()`);
+assert.equal(comNumero.numero, "1234");
+assert.equal(comNumero.nome, "Avenida Brasil");
+assert.ok(!/, 50|, 1234/.test(comNumero.nome), "nome sem número duplicado");
+assert.match(comNumero.titulo, /^Avenida Brasil, 1234/);
+assert.match(comNumero.subtitulo, /Pelotas - RS/);
+assert.match(comNumero.subtitulo, /96025-000/);
+assert.equal(run(`textoEndereco(${JSON.stringify(comNumero.nome)}, ${JSON.stringify(comNumero.numero)}, null)`), "Avenida Brasil, nº 1234");
+
+const semCidade = await run(`(async () => {
+  const buscar = async (url) => {
+    if (String(url).includes("nominatim")) return { ok: true, json: async () => [] };
+    return { ok: true, json: async () => ({ features: [{
+      geometry: { coordinates: [-52.34, -31.77] },
+      properties: { name: "Rua Sem Cidade", city: "", osm_key: "highway", osm_value: "residential" }
+    }] }) };
+  };
+  return (await buscarEnderecos("Rua Sem Cidade", buscar)).length;
+})()`);
+assert.equal(semCidade, 0);
 
 console.log("logica_test: ok");

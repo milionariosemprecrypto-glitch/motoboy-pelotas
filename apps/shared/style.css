@@ -37,7 +37,7 @@ h1 em, .laranja { color:var(--primary); font-style:inherit; }
 .card h2 { font-size:18px; margin:0 0 14px; font-weight:700; }
 label { display:block; font-size:12px; font-weight:600; margin:14px 0 6px; color:var(--muted); text-transform:uppercase; letter-spacing:.6px; }
 input, select, textarea { display:block; width:100%; border:1px solid var(--border); border-radius:12px; padding:14px 13px; background:var(--card2);
-  color:var(--text); font:inherit; font-size:15px; }
+  color:var(--text); font:inherit; font-size:16px; }
 input::placeholder { color:#666; }
 input:focus, select:focus, textarea:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 3px #ff6a0033; }
 input[type=file] { padding:10px; font-size:13px; }
@@ -85,14 +85,21 @@ footer { text-align:center; padding:10px 20px 28px; color:#555; font-size:11px; 
 .corrida-item strong { color:var(--primary); white-space:nowrap; }
 
 .campo { position:relative; }
-.sugestoes { position:absolute; left:0; right:0; z-index:1000; margin-top:4px; background:var(--card2); border:1px solid var(--border); border-radius:12px; box-shadow:0 10px 30px #000c; overflow:hidden; }
+.sugestoes { position:absolute; left:0; right:0; z-index:1000; margin-top:4px; background:var(--card2); border:1px solid var(--border); border-radius:12px; box-shadow:0 10px 30px #000c; overflow:auto; max-height:46vh; }
 .sugestoes:empty { display:none; }
-.sugestao, button.sugestao { display:block; width:100%; text-align:left; padding:13px; font:inherit; font-size:14px; color:inherit;
+.sugestao, button.sugestao { display:flex; align-items:center; gap:12px; width:100%; text-align:left; padding:12px; font:inherit; font-size:16px; color:inherit;
   background:transparent; border:0; border-top:1px solid var(--border); cursor:pointer; }
 .sugestao:first-child, button.sugestao:first-child { border-top:0; }
-.sugestao:hover, button.sugestao:hover { background:#ff6a0018; color:var(--primary); }
+.sugestao:hover, button.sugestao:hover { background:#ff6a0018; color:inherit; }
+.sug-ico { width:36px; height:36px; flex:none; border-radius:50%; background:#f3f4f6; display:grid; place-items:center; color:#111; }
+.sug-ico svg { width:18px; height:18px; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+.sugestao-poi .sug-ico { color:#ff6a00; } .sugestao-recente .sug-ico { color:#6b7280; }
+.sug-txt { flex:1; min-width:0; display:flex; flex-direction:column; gap:2px; }
+.sug-txt b { font-size:15px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.sug-txt span { font-size:13px; font-weight:400; color:#6b7280; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .sugestao-vazia { padding:12px 13px 4px; }
 .sugestao-mapa { font-weight:700; }
+.eu-ponto { width:16px; height:16px; border-radius:50%; background:#2563eb; border:3px solid #fff; box-shadow:0 0 0 7px #2563eb33; }
 .legal { font-size:12px; color:var(--muted); text-align:center; margin-top:14px; }
 .legal a { color:var(--primary); }
 .moto-icon { font-size:26px; filter:drop-shadow(0 0 6px #ff6a00); }

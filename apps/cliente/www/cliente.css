@@ -96,7 +96,9 @@ body.sem-nav .nav-flutuante { display:none; }
 .busca-flutuante { position:fixed; z-index:3120; top:calc(12px + var(--safe-top)); left:calc(12px + var(--safe-left)); right:calc(12px + var(--safe-right));
   display:flex; gap:8px; align-items:flex-start; }
 .busca-flutuante .campo { flex:1; position:relative; }
-.busca-flutuante input { width:100%; background:#fff !important; border-radius:14px !important; box-shadow:0 3px 14px #0003; padding:14px; }
+.busca-flutuante .campo { display:flex; align-items:center; }
+.busca-flutuante input { width:100%; background:#fff !important; border-radius:14px !important; box-shadow:0 3px 14px #0003; padding:14px; font-size:16px; }
+.busca-flutuante .limpar { position:absolute; right:8px; top:8px; background:#f3f4f6; }
 .busca-flutuante .voltar { width:46px; height:46px; box-shadow:0 3px 12px #0003; }
 .chips { display:flex; gap:8px; margin:14px 0; overflow-x:auto; scrollbar-width:none; }
 .chip { flex:none; background:#f3f4f6; border:0; border-radius:30px; padding:9px 14px; font:600 13px Poppins, sans-serif; color:#111; cursor:pointer; }
@@ -105,9 +107,16 @@ body.sem-nav .nav-flutuante { display:none; }
 .t-a, .t-b { width:12px; height:12px; display:inline-block; flex:none; background:#111; box-shadow:0 0 0 4px #11111114; }
 .t-a { border-radius:50%; } .t-b { border-radius:2px; }
 .t-linha { width:3px; flex:1; background:#111; margin:5px 0; min-height:28px; border-radius:2px; }
-.campos { flex:1; display:flex; flex-direction:column; gap:6px; }
-.campos input { background:transparent; padding:11px 6px; border-radius:8px; }
-.campos input:focus { background:#f3f4f6; }
+.campos { flex:1; display:flex; flex-direction:column; gap:6px; min-width:0; }
+.campo-busca { display:flex; align-items:center; gap:4px; }
+.campo-busca input, .campos input { background:transparent; padding:11px 6px; border-radius:8px; font-size:16px; }
+.campos input:focus, .campo-busca input:focus { background:#f3f4f6; }
+.limpar { width:32px; height:32px; flex:none; border:0; border-radius:50%; background:#e5e7eb; color:#111; font:700 18px/1 Poppins, sans-serif; cursor:pointer; }
+.trocar { align-self:flex-start; margin:2px 0; width:32px; height:32px; border:0; border-radius:50%; background:#f3f4f6; color:#111; font:700 16px/1 Poppins, sans-serif; cursor:pointer; }
+.rotulo-lado { margin:8px 2px 0; font:700 12px Poppins, sans-serif; color:#6b7280; text-transform:uppercase; letter-spacing:.4px; }
+.menu-local { position:absolute; z-index:20; top:46px; left:0; width:min(280px, 78vw); background:#fff; border:1px solid #eceef1; border-radius:14px; box-shadow:0 10px 30px #0002; overflow:hidden; }
+.menu-local button { display:block; width:100%; text-align:left; background:#fff; border:0; border-bottom:1px solid #f1f2f4; padding:12px 14px; font:600 14px Poppins, sans-serif; color:#111; cursor:pointer; }
+.topo-home { position:relative; }
 .detalhe-end { display:flex; flex-direction:column; gap:6px; padding:2px 2px 8px; }
 .linha-numero { display:flex; gap:8px; align-items:center; }
 .linha-numero input { flex:1; }
@@ -129,9 +138,11 @@ body.sem-nav .nav-flutuante { display:none; }
 .pino-central { position:fixed; z-index:3010; left:50%; top:32%; transform:translate(-50%, -100%); pointer-events:none; }
 .pino-central i { display:block; width:26px; height:26px; border-radius:50%; background:#111; border:7px solid #111; box-shadow:inset 0 0 0 4px #fff; position:relative; }
 .pino-central i::after { content:""; position:absolute; left:50%; top:100%; width:3px; height:22px; background:#111; transform:translateX(-50%); }
-.fab-mapa { position:fixed; z-index:3100; right:calc(14px + var(--safe-right)); bottom:calc(var(--folha-altura, 240px) + 14px);
+.fab-mapa, .fab-local { position:fixed; z-index:3100; right:calc(14px + var(--safe-right)); bottom:calc(var(--folha-altura, 240px) + 14px);
   width:44px; height:44px; border-radius:50%; border:0; background:#fff; color:#111; box-shadow:0 3px 12px #0003;
   font:700 18px Poppins, sans-serif; cursor:pointer; }
+.fab-local { bottom:calc(var(--folha-altura, 240px) + 66px); color:#2563eb; font-size:20px; }
+#telaPino .fab-local { top:auto; }
 .rota-resumo { display:flex; flex-direction:column; gap:8px; font-size:14px; margin-bottom:6px; }
 .rota-resumo div { display:flex; align-items:center; gap:10px; } .rota-resumo span { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .opcao-preco { display:flex; align-items:center; gap:12px; border:2px solid #111; border-radius:16px; padding:12px 14px; margin-top:14px; }

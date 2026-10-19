@@ -53,7 +53,13 @@
   <!-- ===== Início ===== -->
   <section id="home" class="tela aba">
     <div class="topo-home">
-      <button class="loc-atual" onclick="atualizarLocal(true)"><i class="ponto-azul"></i><span id="locAtual">Localização atual</span> ▾</button>
+      <button class="loc-atual" type="button" onclick="abrirMenuLocal()"><i class="ponto-azul"></i><span id="locAtual">Buscando localização…</span> ▾</button>
+      <div id="menuLocal" class="menu-local hidden">
+        <button type="button" onclick="usarGpsComoRetirada()">📍 Posição atual</button>
+        <button type="button" onclick="usarLugar('casa'); fecharMenuLocal()">🏠 Casa</button>
+        <button type="button" onclick="usarLugar('trabalho'); fecharMenuLocal()">💼 Trabalho</button>
+        <div id="menuRecentes"></div>
+      </div>
       <img src="shared/img/eja-wordmark-claro.svg" class="mini-logo" alt="É-Já">
     </div>
     <div id="cardBoasVindas" class="boas-vindas hidden">
@@ -125,22 +131,31 @@
       <div class="trilho"><i class="t-a"></i><i class="t-linha"></i><i class="t-b"></i></div>
       <div class="campos">
         <div class="campo" id="slotOrigem">
-          <input id="origem" placeholder="Endereço de retirada" autocomplete="off" maxlength="200">
+          <div class="campo-busca">
+            <input id="origem" placeholder="Endereço de retirada" autocomplete="off" maxlength="200" enterkeyhint="search" aria-label="Retirada">
+            <button type="button" class="limpar hidden" id="limparOrigem" aria-label="Limpar retirada">×</button>
+          </div>
           <div id="sugOrigem" class="sugestoes"></div>
           <div id="detOrigem" class="detalhe-end hidden">
+            <p class="rotulo-lado">Retirada</p>
             <div class="linha-numero">
-              <input id="numOrigem" maxlength="10" placeholder="Número" autocomplete="off" aria-label="Número da retirada">
+              <input id="numOrigem" maxlength="10" inputmode="text" placeholder="Número" autocomplete="off" aria-label="Número da retirada">
               <label class="sn" for="snOrigem"><input type="checkbox" id="snOrigem"> S/N</label>
             </div>
             <input id="compOrigem" maxlength="80" placeholder="Complemento ou referência (opcional)" autocomplete="off" aria-label="Complemento da retirada">
           </div>
         </div>
+        <button type="button" class="trocar" id="btnTrocar" onclick="trocarPontos()" aria-label="Inverter retirada e entrega">↕</button>
         <div class="campo" id="slotDestino">
-          <input id="destino" placeholder="Para onde?" autocomplete="off" maxlength="200">
+          <div class="campo-busca">
+            <input id="destino" placeholder="Para onde?" autocomplete="off" maxlength="200" enterkeyhint="search" aria-label="Destino">
+            <button type="button" class="limpar hidden" id="limparDestino" aria-label="Limpar destino">×</button>
+          </div>
           <div id="sugDestino" class="sugestoes"></div>
           <div id="detDestino" class="detalhe-end hidden">
+            <p class="rotulo-lado">Entrega</p>
             <div class="linha-numero">
-              <input id="numDestino" maxlength="10" placeholder="Número" autocomplete="off" aria-label="Número da entrega">
+              <input id="numDestino" maxlength="10" inputmode="text" placeholder="Número" autocomplete="off" aria-label="Número da entrega">
               <label class="sn" for="snDestino"><input type="checkbox" id="snDestino"> S/N</label>
             </div>
             <input id="compDestino" maxlength="80" placeholder="Complemento ou referência (opcional)" autocomplete="off" aria-label="Complemento da entrega">
@@ -148,7 +163,7 @@
         </div>
       </div>
     </div>
-    <p class="small dica-numero">O mapa de Pelotas quase não tem número. Informe o da casa, ou marque S/N.</p>
+    <p class="small dica-numero">Digite a rua e o número juntos, como Av Brasil 1234. O pino no mapa ajusta a porta.</p>
     <button id="btnContinuar" class="btn-preto" type="button" onclick="continuarPlano()">Continuar</button>
     <div class="chips">
       <button class="chip" onclick="usarLugar('casa')">🏠 Casa</button>
@@ -165,17 +180,20 @@
     <div class="busca-flutuante">
       <button class="voltar" type="button" onclick="fecharPino()">←</button>
       <div class="campo">
-        <input id="buscaPino" placeholder="Buscar endereço em Pelotas" autocomplete="off" aria-label="Buscar endereço no mapa">
+        <input id="buscaPino" placeholder="Buscar endereço em Pelotas" autocomplete="off" aria-label="Buscar endereço no mapa" enterkeyhint="search">
+        <button type="button" class="limpar hidden" id="limparPino" aria-label="Limpar busca">×</button>
         <div id="sugPino" class="sugestoes"></div>
       </div>
     </div>
+    <button class="fab-local" type="button" onclick="irParaMim('pino')" aria-label="Minha localização">◎</button>
     <div class="folha" id="folhaPino">
       <div class="alca"></div>
       <div class="folha-miolo">
         <h2 class="centro">Marque no mapa</h2>
-        <p class="small centro">Arraste o mapa para mover o marcador</p>
+        <p class="small centro">Arraste o mapa. O pino marca o ponto.</p>
         <div class="campo-falso" id="pinoNome">Para onde?</div>
-        <button class="btn-preto" type="button" onclick="confirmarPino()">Confirmar este ponto</button>
+        <p id="pinoFora" class="small erro hidden">Fora de Pelotas. Escolha um ponto na cidade.</p>
+        <button id="btnPino" class="btn-preto" type="button" onclick="confirmarPino()" disabled>Confirmar este ponto</button>
       </div>
     </div>
   </section>
@@ -185,6 +203,7 @@
     <div id="mapa" class="mapa-cheio mapa-meio"></div>
     <button class="fab-voltar" type="button" onclick="voltarDoConfirmar()">←</button>
     <button class="fab-mapa" type="button" onclick="verRotaConfirmada()" aria-label="Centralizar a rota">⌖</button>
+    <button class="fab-local" type="button" onclick="irParaMim('confirmar')" aria-label="Minha localização">◎</button>
     <form id="deliveryForm" class="folha">
       <div class="alca"></div>
       <div class="folha-miolo">
@@ -208,6 +227,7 @@
     <div id="mapaPedido" class="mapa-cheio mapa-meio"></div>
     <button class="fab-voltar" type="button" onclick="sairDoPedido()">←</button>
     <button class="fab-mapa" type="button" onclick="verRotaPedido()" aria-label="Ver coleta, entrega e motoboy">⌖</button>
+    <button class="fab-local" type="button" onclick="irParaMim('pedido')" aria-label="Minha localização">◎</button>
     <div class="folha" id="folhaPedido">
       <div class="alca"></div>
       <div class="folha-miolo">

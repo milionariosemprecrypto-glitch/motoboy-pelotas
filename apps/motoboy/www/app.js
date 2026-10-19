@@ -95,10 +95,20 @@ function iniciarMapa() {
   window.addEventListener("eja-folha", ev => {
     if (seguirMoto && ultimaPos) aplicarCamera(ultimaPos[0], ultimaPos[1], Nav.ultimoRumo, 0, ev.detail && ev.detail.arrastando ? 0 : 400);
   });
-  if (!navigator.geolocation) return;
+  if (!navigator.geolocation) { if ($("motoStatus")) $("motoStatus").textContent = "GPS indisponível neste aparelho."; return; }
   navigator.geolocation.watchPosition(p => {
     aoPosicao(p.coords.latitude, p.coords.longitude, p.coords.heading, p.coords.speed);
-  }, () => {}, { enableHighAccuracy: true });
+  }, avisoGps, { enableHighAccuracy: true, timeout: 15000, maximumAge: 5000 });
+}
+function avisoGps(err) {
+  const code = err && err.code;
+  const msg = String((err && (err.message || err.code)) || "");
+  const negado = code === 1 || /denied|permission/i.test(msg);
+  const tempo = code === 3 || /timeout/i.test(msg);
+  const texto = negado ? "Permissão de localização negada. Ative o GPS para o É-Já."
+    : tempo ? "Tempo esgotado ao buscar o GPS."
+    : "Não foi possível ler o GPS.";
+  if ($("motoStatus")) $("motoStatus").textContent = texto;
 }
 
 // Envia a localização: a cada 10 s em corrida (rastreio ao vivo do cliente), 30 s quando só online.
@@ -121,7 +131,7 @@ async function localizacaoSegundoPlano(ligar) {
     watcherBg = await BG.addWatcher({
       backgroundTitle: "É-Já Motoboy", backgroundMessage: "Compartilhando sua localização durante o trabalho",
       requestPermissions: true, stale: false, distanceFilter: 15
-    }, (loc, err) => { if (loc) aoPosicao(loc.latitude, loc.longitude, loc.bearing, loc.speed); });
+    }, (loc, err) => { if (err) avisoGps(err); if (loc) aoPosicao(loc.latitude, loc.longitude, loc.bearing, loc.speed); });
   } else if (!ligar && watcherBg) { await BG.removeWatcher({ id: watcherBg }); watcherBg = null; }
 }
 

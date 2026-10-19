@@ -137,12 +137,19 @@ try {
     });
     db.channel = () => ({ on() { return this; }, subscribe() { return this; } });
     db.removeChannel = () => {};
-    db.rpc = async () => ({ data: null, error: null });
+    db.rpc = async (fn) => {
+      if (fn === "minha_corrida") return { data: [corrida], error: null };
+      if (fn === "ganhos") return { data: [], error: null };
+      return { data: null, error: null };
+    };
     show("telaAuth", false); show("telaApp", true); show("telaTrabalho", true);
+    const trava = document.createElement("style");
+    trava.textContent = "#telaAuth{display:none !important}#telaApp,#telaTrabalho{display:block !important}";
+    document.head.append(trava);
     iniciarMapa();
     const id = "p1";
     usuario = { id: "moto" };
-    aprovado = false;
+    aprovado = true;
     ocupado = true;
     corrida = {
       id, status: "aceito", item: "Documento", preco: 12,
@@ -213,11 +220,11 @@ try {
     return { antes, depois: Math.round(folha.getBoundingClientRect().height), snap: folha.dataset.snap, extra };
   });
   ok(arrasteMoto.depois > arrasteMoto.antes + 40 && arrasteMoto.snap !== "colapsada" && arrasteMoto.extra !== "none", "arrastar a alça abre endereço, chat e Waze (" + arrasteMoto.snap + ")");
-  await moto.setViewport({ width: 800, height: 1280 });
-  await moto.evaluate(() => new Promise(r => setTimeout(r, 300)));
+  await moto.setViewport({ width: 800, height: 1280, isMobile: true, hasTouch: true });
+  await moto.evaluate(() => new Promise(r => setTimeout(r, 350)));
   await moto.screenshot({ path: "/opt/cursor/artifacts/motoboy-nav-grande.png" });
   await moto.setViewport({ width: 360, height: 740, isMobile: true, hasTouch: true });
-  await moto.evaluate(() => { folhaIr(document.querySelector("#telaTrabalho .painel"), 0); });
+  await moto.evaluate(() => { folhaIr(document.querySelector("#telaTrabalho .painel"), 0); return new Promise(r => setTimeout(r, 250)); });
   await moto.screenshot({ path: "/opt/cursor/artifacts/motoboy-nav-colapsada.png" });
 } finally {
   await browser.close();

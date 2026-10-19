@@ -40,6 +40,33 @@ aceita a rota só se estiver entre 1,0× e 2,5× a linha reta; senão usa linha 
 
 ## Notificações push (Firebase) — ver `docs/FIREBASE.md`
 
+## Número, navegação e chat (migration ainda NÃO aplicada em produção)
+
+O arquivo `supabase/migrations/20261019141632_numero_navegacao_chat.sql` acrescenta o número e o complemento do endereço, a tabela `mensagens` (chat da corrida, com RLS) e inclui essas mensagens na anonimização da conta e na rotina diária `eja_limpar_gps` (90 dias).
+
+**Não rode isso no banco de produção até publicar o app.** Quando for a hora, no SQL Editor do projeto É-Já (ou com a CLI, na sua máquina):
+
+```sh
+# opção A — SQL Editor: cole o arquivo inteiro e execute uma vez
+# opção B — CLI, com o projeto linkado:
+supabase db push
+```
+
+Depois confira:
+
+```sql
+select column_name from information_schema.columns
+ where table_name = 'pedidos' and column_name like '%numero%';
+select tablename from pg_publication_tables
+ where pubname = 'supabase_realtime' and tablename = 'mensagens';
+```
+
+Pedidos antigos continuam válidos: número e complemento ficam vazios e o app do motoboy mostra "Sem número neste pedido". O teste `supabase/tests/endereco_chat_test.sql` (SQL Editor, desfaz no final) cobre número obrigatório, chat e retenção.
+
+A minuta da política (`docs/politica-de-privacidade.md`) passou a citar número, complemento e chat. A versão vigente no app continua **1.0** — publicar a 1.1 (e o aceite novo) fica para o Julio e o advogado.
+
+Testes que não tocam no banco de produção: `node tests/logica_test.mjs`. O `tests/sql_harness.mjs` aplica as migrations num Postgres local (PGlite) e roda os SQL de RLS, compliance e chat. O `tests/e2e.py` usa o Supabase real: só rode depois que a migration acima estiver aplicada.
+
 ## Banco (Supabase)
 - `supabase/migrations/20261015000000_baseline.sql` — como o banco estava antes.
 - `supabase/migrations/20261015000100_eja_v1.sql` — schema seguro do É-Já (já aplicado).

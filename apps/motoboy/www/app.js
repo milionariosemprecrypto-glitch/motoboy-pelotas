@@ -2,6 +2,8 @@
 let usuario = null, aprovado = false;
 let disponivel = false, ocupado = false, ofertaAtual = null, corrida = null;
 let timerOferta = null, timerMoto = null, motoAbaAtual = "inicio", mapa = null, marcador = null, ultimaPos = null;
+let seguirMoto = true, vozLigada = false, ultimoPan = 0, navBuscando = false;
+try { vozLigada = localStorage.getItem("eja_nav_voz") === "1"; } catch (e) {}
 const recusados = new Set();
 
 iniciarAuth({ role: "motoboy", aoEntrar: u => { usuario = u; carregar(); } });
@@ -81,14 +83,11 @@ function iniciarMapa() {
   if (mapa) return;
   document.body.classList.add("modo-mapa");
   mapa = criarMapa("mapa");
+  if ($("navVoz")) $("navVoz").textContent = vozLigada ? "Voz on" : "Voz off";
+  mapa.on("dragstart", () => { if (ocupado) seguirMoto = false; });
   if (!navigator.geolocation) return;
   navigator.geolocation.watchPosition(p => {
-    const ll = [p.coords.latitude, p.coords.longitude];
-    ultimaPos = ll;
-    if (!marcador) {
-      marcador = L.marker(ll, { icon: icone.moto(), zIndexOffset: 1000 }).addTo(mapa);
-      mapa.setView(ll, 15);
-    } else marcador.setLatLng(ll);
+    aoPosicao(p.coords.latitude, p.coords.longitude, p.coords.heading, p.coords.speed);
   }, () => {}, { enableHighAccuracy: true });
 }
 
@@ -112,11 +111,15 @@ async function localizacaoSegundoPlano(ligar) {
     watcherBg = await BG.addWatcher({
       backgroundTitle: "É-Já Motoboy", backgroundMessage: "Compartilhando sua localização durante o trabalho",
       requestPermissions: true, stale: false, distanceFilter: 15
-    }, (loc, err) => { if (loc) { ultimaPos = [loc.latitude, loc.longitude]; marcador && marcador.setLatLng(ultimaPos); } });
+    }, (loc, err) => { if (loc) aoPosicao(loc.latitude, loc.longitude, loc.bearing, loc.speed); });
   } else if (!ligar && watcherBg) { await BG.removeWatcher({ id: watcherBg }); watcherBg = null; }
 }
 
-function centralizar() { if (ultimaPos) mapa.setView(ultimaPos, 16); else mapa.setView(PELOTAS, 14); }
+function centralizar() {
+  seguirMoto = true;
+  if (ultimaPos) mapa.setView(ultimaPos, ocupado ? Math.max(mapa.getZoom(), 16) : 16);
+  else mapa.setView(PELOTAS, 14);
+}
 
 function atualizarPainel() {
   $("motoStatusTitulo").textContent = ocupado ? "Em corrida" : disponivel ? "Procurando corridas" : "Você está offline";
@@ -141,8 +144,9 @@ function alternarDisponibilidade() {
 function mostrarOferta(o) {
   ofertaAtual = o;
   $("ofertaPreco").textContent = money(o.preco);
-  $("ofertaResumo").textContent = "Retirada: " + o.retirada + " | Entrega: " + o.entrega + " | Item: " + o.item +
-    " | " + Number(o.distancia_km).toLocaleString("pt-BR") + " km";
+  $("ofertaResumo").textContent = "Retirada: " + textoEndereco(o.retirada, o.ret_numero, o.ret_complemento) +
+    " | Entrega: " + textoEndereco(o.entrega, o.ent_numero, o.ent_complemento) +
+    " | Item: " + o.item + " | " + Number(o.distancia_km).toLocaleString("pt-BR") + " km";
   const b = $("barraTempo");
   b.style.transition = "none"; b.style.width = "100%"; void b.offsetWidth;
   b.style.transition = "width 30s linear"; b.style.width = "0%";
@@ -179,39 +183,153 @@ function recusarCorrida() {
   buscarOfertas();
 }
 
-let camadasCorrida = [];
-async function desenharCorrida(c) {
-  camadasCorrida.forEach(x => x.remove()); camadasCorrida = [];
-  if (!c || c.ret_lat == null) return;
-  const alvo = c.status === "aceito" ? { lat: c.ret_lat, lng: c.ret_lng } : { lat: c.ent_lat, lng: c.ent_lng };
-  camadasCorrida.push(L.marker([alvo.lat, alvo.lng], { icon: c.status === "aceito" ? icone.retirada() : icone.entrega() }).addTo(mapa));
-  if (ultimaPos) {
-    const r = await calcularRota({ lat: ultimaPos[0], lng: ultimaPos[1] }, alvo);
-    if (r) { camadasCorrida.push(L.polyline(r.linha, ROTA).addTo(mapa)); mapa.fitBounds(r.linha, { padding: [30, 30] }); }
+let linhaNav = null, marcaAlvo = null, alvoDesenhado = null;
+function alvoCorrida() {
+  const c = corrida;
+  if (!c || c.ret_lat == null) return null;
+  return c.status === "aceito"
+    ? { lat: c.ret_lat, lng: c.ret_lng, key: c.id + ":ret" }
+    : { lat: c.ent_lat, lng: c.ent_lng, key: c.id + ":ent" };
+}
+function limparDesenhoNav() {
+  if (linhaNav) { linhaNav.remove(); linhaNav = null; }
+  if (marcaAlvo) { marcaAlvo.remove(); marcaAlvo = null; }
+  alvoDesenhado = null;
+}
+function desenharAlvo() {
+  const alvo = alvoCorrida();
+  if (!alvo || !mapa) return;
+  if (alvoDesenhado === alvo.key && marcaAlvo) return;
+  if (marcaAlvo) marcaAlvo.remove();
+  marcaAlvo = L.marker([alvo.lat, alvo.lng], { icon: corrida.status === "aceito" ? icone.retirada() : icone.entrega() }).addTo(mapa);
+  alvoDesenhado = alvo.key;
+}
+function desenharLinhaNav() {
+  if (!mapa) return;
+  if (linhaNav) { linhaNav.remove(); linhaNav = null; }
+  if (Nav.rota) linhaNav = L.polyline(Nav.rota.linha, ROTA).addTo(mapa);
+}
+function preencherLugar(c) {
+  const coleta = c.status === "aceito";
+  $("lugarRotulo").textContent = coleta ? "Buscar em" : "Entregar em";
+  $("lugarRua").textContent = coleta ? c.retirada : c.entrega;
+  const num = coleta ? c.ret_numero : c.ent_numero;
+  const comp = coleta ? c.ret_complemento : c.ent_complemento;
+  const el = $("lugarNum");
+  if (num) { el.textContent = num === "S/N" ? "S/N" : "nº " + num; el.classList.remove("vazio"); }
+  else { el.textContent = "Sem número neste pedido"; el.classList.add("vazio"); }
+  $("lugarComp").textContent = comp || "";
+  show("lugarComp", !!comp);
+}
+function esconderNav() {
+  show("navBanner", false); show("navEta", false);
+  NavLimpar(); limparDesenhoNav();
+}
+function renderNav(lat, lng) {
+  show("navBanner", true); show("navEta", true);
+  const alvo = alvoCorrida();
+  const p = (Nav.rota && alvo && Nav.rota.alvoKey === alvo.key) ? painelNav(lat, lng) : null;
+  if (!p) {
+    $("navSeta").textContent = "…";
+    $("navInstrucao").textContent = Nav.falhou ? "Sem rota agora. Use Google Maps ou Waze." : "Traçando a rota…";
+    $("navRua").textContent = "";
+    $("navDist").textContent = "—";
+    $("navTempo").textContent = "";
+    return;
+  }
+  $("navSeta").textContent = p.seta;
+  $("navInstrucao").textContent = (p.metrosManobra >= 30 ? formatarDistancia(p.metrosManobra) + " · " : "") + p.instrucao;
+  $("navRua").textContent = p.fora ? "Você saiu da rota. Recalculando…" : (p.nome || "");
+  $("navDist").textContent = formatarDistancia(p.restanteM);
+  $("navTempo").textContent = formatarDuracao(p.restanteS);
+  if (p.voz && p.voz !== Nav.ultimaVoz) { Nav.ultimaVoz = p.voz; falarNav(p.voz); }
+}
+function falarNav(texto) {
+  if (!vozLigada || !texto || !window.speechSynthesis) return;
+  try {
+    const u = new SpeechSynthesisUtterance(texto);
+    u.lang = "pt-BR";
+    speechSynthesis.cancel();
+    speechSynthesis.speak(u);
+  } catch (e) {}
+}
+function alternarVoz() {
+  vozLigada = !vozLigada;
+  try { localStorage.setItem("eja_nav_voz", vozLigada ? "1" : "0"); } catch (e) {}
+  $("navVoz").textContent = vozLigada ? "Voz on" : "Voz off";
+  if (!vozLigada && window.speechSynthesis) { speechSynthesis.cancel(); Nav.ultimaVoz = ""; return; }
+  falarNav("Voz ligada");
+  Nav.ultimaVoz = "";
+}
+function escolherRumo(anterior, atual, heading, speed) {
+  if (typeof heading === "number" && !Number.isNaN(heading) && heading >= 0 && (speed == null || speed > 0.4)) return heading;
+  if (anterior && metrosEntre(anterior, atual) > 8) return rumoGraus(anterior, atual);
+  return Nav.ultimoRumo;
+}
+async function aoPosicao(lat, lng, heading, speed) {
+  const anterior = ultimaPos ? { lat: ultimaPos[0], lng: ultimaPos[1] } : null;
+  const ll = [lat, lng];
+  ultimaPos = ll;
+  if (mapa) {
+    if (!marcador) {
+      marcador = L.marker(ll, { icon: icone.moto(), zIndexOffset: 1000 }).addTo(mapa);
+      if (!ocupado) mapa.setView(ll, 15);
+    } else marcador.setLatLng(ll);
+  }
+  const rumo = escolherRumo(anterior, { lat, lng }, heading, speed);
+  if (rumo != null) { Nav.ultimoRumo = rumo; orientarMarcador(marcador, rumo); }
+  if (!ocupado || !corrida) return;
+  const alvo = alvoCorrida();
+  if (!alvo) return;
+  desenharAlvo();
+  const precisa = precisaRotaNav(lat, lng, alvo.key);
+  if (precisa.buscar && !navBuscando) {
+    navBuscando = true;
+    const res = await buscarRotaNav({ lat, lng }, alvo, { forcar: precisa.forcar });
+    navBuscando = false;
+    if (res && res.rota) { definirRotaNav(res.rota, alvo.key); desenharLinhaNav(); }
+    else if (res && !res.throttled && !Nav.rota) Nav.falhou = true;
+  }
+  renderNav(lat, lng);
+  if (seguirMoto && mapa && Date.now() - ultimoPan > 800) {
+    ultimoPan = Date.now();
+    mapa.panTo(ll, { animate: true, duration: 0.5 });
   }
 }
 
-function abrirNavegacao() {
-  const c = corrida; if (!c) return;
-  const [lat, lng] = c.status === "aceito" ? [c.ret_lat, c.ret_lng] : [c.ent_lat, c.ent_lng];
-  window.open("https://www.google.com/maps/dir/?api=1&travelmode=driving&destination=" + lat + "," + lng, "_blank");
+function abrirNavegacao(app) {
+  const alvo = alvoCorrida(); if (!alvo) return;
+  const url = urlMapaExterno(app === "waze" ? "waze" : "google", alvo.lat, alvo.lng);
+  if (url) window.open(url, "_blank");
 }
 
 function mostrarCorrida() {
   const c = corrida, coletando = c.status === "aceito";
-  desenharCorrida(c); localizacaoSegundoPlano(true); enviarLocal(true);
+  seguirMoto = true;
+  if (mapa && ultimaPos) mapa.setView(ultimaPos, 17);
+  desenharAlvo();
+  if (ultimaPos) aoPosicao(ultimaPos[0], ultimaPos[1], Nav.ultimoRumo, 1);
+  else renderNav(PELOTAS[0], PELOTAS[1]);
+  localizacaoSegundoPlano(true); enviarLocal(true);
   show("corrida", true);
   $("corridaTitulo").textContent = coletando ? "Vá retirar o item" : "Leve até o destino";
-  $("corridaInfo").textContent = (coletando ? "Retirada: " + c.retirada : "Entrega: " + c.entrega) +
-    " | Item: " + c.item + " | Valor: " + money(c.preco);
+  preencherLugar(c);
+  $("corridaInfo").textContent = "Item: " + c.item + " | Valor: " + money(c.preco);
   show("codigoLabel", !coletando); show("codigoEntrega", !coletando);
   $("corridaBtn").textContent = coletando ? "Já coletei o item" : "Concluir entrega";
   $("motoStatus").textContent = coletando ? "Corrida aceita. Siga até o local de retirada." : "Item coletado. Siga até o destino.";
   atualizarBarra();
+  sincronizarChatMoto();
+}
+
+function sincronizarChatMoto() {
+  if (!corrida || !usuario) { Chat.parar(); return; }
+  Chat.ligar({ pedidoId: corrida.id, meuId: usuario.id, status: corrida.status, outro: "Cliente" });
 }
 
 function encerrarCorrida(msg) {
-  corrida = null; ocupado = false; desenharCorrida(null);
+  corrida = null; ocupado = false; esconderNav();
+  Chat.parar();
   if (!disponivel) localizacaoSegundoPlano(false);
   show("corrida", false);
   $("codigoEntrega").value = "";

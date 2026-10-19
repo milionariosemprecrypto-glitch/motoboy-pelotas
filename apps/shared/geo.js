@@ -64,6 +64,26 @@ function autocompletar(input, lista, aoEscolher) {
   });
 }
 
+// Número da casa (OSM de Pelotas quase não tem). "S/N" é válido. Complemento opcional, máx. 80.
+function validarDetalhe(numero, sn, complemento) {
+  const comp = String(complemento || "").trim();
+  if (comp.length > 80) return { ok: false, erro: "Complemento muito longo (máx. 80)." };
+  let n = sn ? "S/N" : String(numero || "").trim();
+  if (/^(s\/n|sn|s\.n\.?)$/i.test(n)) n = "S/N";
+  if (!n) return { ok: false, erro: "Informe o número ou marque S/N." };
+  if (n !== "S/N" && !/^[0-9A-Za-z][0-9A-Za-z./-]{0,9}$/.test(n)) {
+    return { ok: false, erro: "Número inválido. Use o número da casa ou S/N." };
+  }
+  return { ok: true, numero: n, complemento: comp || null };
+}
+
+// "Rua X · Centro, nº 120 — portão azul" (número e complemento somem se não existirem).
+function textoEndereco(nome, numero, complemento) {
+  const n = !numero ? "" : numero === "S/N" ? "S/N" : "nº " + numero;
+  const linha = [nome || "", n].filter(Boolean).join(", ");
+  return complemento ? linha + " — " + complemento : linha;
+}
+
 // Nome de um ponto (para "Localização atual" e pino arrastado). Retorna texto ou null.
 async function nomeDoPonto(lat, lng) {
   try {

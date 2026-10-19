@@ -59,6 +59,14 @@ const icone = {
 const ROTA = { color: "#111111", weight: 5, opacity: .9 };
 
 // Recalcula o tamanho do mapa (use depois de mostrar uma tela que estava escondida).
+// Graus no sentido horário a partir do norte. O ícone ➤ aponta para a direita, então subtrai 90.
+function orientarMarcador(marker, graus) {
+  if (!marker || graus == null || Number.isNaN(graus)) return;
+  const el = marker.getElement && marker.getElement();
+  const pin = el && el.querySelector(".pin-moto");
+  if (pin) pin.style.transform = "rotate(" + (graus - 90) + "deg)";
+}
+
 function ajustarMapa(m) {
   m.invalidateSize();
   if (m._gl) { try { m._gl.getMaplibreMap().resize(); m._gl._update(); } catch {} }

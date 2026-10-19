@@ -91,6 +91,13 @@ body.sem-nav .nav-flutuante { display:none; }
 .campos { flex:1; display:flex; flex-direction:column; gap:6px; }
 .campos input { background:transparent; padding:11px 6px; border-radius:8px; }
 .campos input:focus { background:#f3f4f6; }
+.detalhe-end { display:flex; flex-direction:column; gap:6px; padding:2px 2px 8px; }
+.linha-numero { display:flex; gap:8px; align-items:center; }
+.linha-numero input { flex:1; }
+.sn { display:flex !important; align-items:center; gap:6px; margin:0 !important; text-transform:none !important; letter-spacing:0 !important;
+  font:600 13px Poppins, sans-serif !important; color:#111; white-space:nowrap; cursor:pointer; }
+.sn input { width:18px; height:18px; padding:0; flex:none; accent-color:#ff6a00; }
+.dica-numero { margin:10px 2px 0; }
 .tema-claro .sugestoes { background:#fff; border:1px solid #eceef1; box-shadow:0 10px 30px #0002; }
 .tema-claro .sugestao { color:#111; border-color:#f1f2f4; } .tema-claro .sugestao:hover { background:#fff3ea; color:#111; }
 

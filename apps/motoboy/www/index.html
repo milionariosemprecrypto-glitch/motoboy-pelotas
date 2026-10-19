@@ -94,6 +94,12 @@
 
     <div id="telaTrabalho" class="hidden">
       <div id="mapa" class="mapa-full"></div>
+      <div id="navBanner" class="nav-banner hidden">
+        <div id="navSeta" class="nav-seta">↑</div>
+        <div class="nav-txt"><b id="navInstrucao">Traçando a rota…</b><span id="navRua"></span></div>
+        <button id="navVoz" class="nav-voz" type="button" onclick="alternarVoz()">Voz off</button>
+      </div>
+      <div id="navEta" class="nav-eta hidden"><b id="navDist">—</b> <span id="navTempo"></span></div>
       <button class="fab fab-tl" onclick="motoAba('ganhos')" aria-label="Menu"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
       <button id="pillGanhos" class="pill-ganhos" onclick="motoAba('ganhos')"><span>R$</span> <b id="pillValor">0,00</b></button>
       <button class="fab fab-tr" onclick="centralizar()" aria-label="Centralizar"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/><circle cx="12" cy="12" r="7.5"/></svg></button>
@@ -117,10 +123,20 @@
           <div id="corrida" class="hidden">
             <span class="pill">Corrida em andamento</span>
             <h2 id="corridaTitulo"></h2>
+            <div id="corridaLugar" class="lugar-card">
+              <div id="lugarRotulo" class="small"></div>
+              <div id="lugarNum" class="lugar-num"></div>
+              <div id="lugarRua"></div>
+              <div id="lugarComp" class="small"></div>
+            </div>
             <div id="corridaInfo" class="painel-sub"></div>
             <label for="codigoEntrega" id="codigoLabel" class="hidden">Código de confirmação do destinatário</label>
             <input id="codigoEntrega" class="hidden" inputmode="numeric" maxlength="4" placeholder="4 dígitos">
-            <button class="secondary" onclick="abrirNavegacao()">Abrir navegação (Google Maps)</button>
+            <button id="btnChat" class="secondary hidden" type="button" onclick="Chat.alternar()">Conversar <span id="chatBadge" class="chat-badge hidden">0</span></button>
+            <div class="nav-ext">
+              <button class="secondary" type="button" onclick="abrirNavegacao('google')">Google Maps</button>
+              <button class="secondary" type="button" onclick="abrirNavegacao('waze')">Waze</button>
+            </div>
             <button id="corridaBtn" class="primary" onclick="avancar()"></button>
           </div>
         </div>
@@ -161,6 +177,8 @@
 <script src="shared/push.js"></script>
 <script src="shared/mapa.js"></script>
 <script src="shared/alerta.js"></script>
+<script src="shared/navegacao.js"></script>
+<script src="shared/chat.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

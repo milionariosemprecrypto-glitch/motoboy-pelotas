@@ -43,8 +43,11 @@ async function carregar(u) {
   db.from("profiles").select("nome").eq("id", u.id).maybeSingle().then(({ data }) => { if (data && data.nome) $("contaNome").textContent = data.nome; });
   montarServicos(); irAba("home"); atualizarLocal(false);
   iniciarPush("cliente", () => atualizarStatus());
-  autocompletar($("origem"), $("sugOrigem"), e => { origem = e; seguirSePronto(); });
-  autocompletar($("destino"), $("sugDestino"), e => { destino = e; seguirSePronto(); });
+  autocompletar($("origem"), $("sugOrigem"), e => definirLado("origem", e));
+  autocompletar($("destino"), $("sugDestino"), e => definirLado("destino", e));
+  $("origem").addEventListener("input", () => { if ($("origem").dataset.escolhido !== "1") limparDetalhe("origem"); });
+  $("destino").addEventListener("input", () => { if ($("destino").dataset.escolhido !== "1") limparDetalhe("destino"); });
+  ligarSn("origem"); ligarSn("destino");
   await carregarHistorico();
   const { data } = await db.rpc("meu_pedido_ativo");
   if (data && data[0]) mostrarPedido(data[0]);
@@ -56,7 +59,11 @@ function irAba(a) {
     show(x, x === a); $("nav" + x[0].toUpperCase() + x.slice(1)).classList.toggle("on", x === a);
   });
   if (a === "atividade") carregarHistorico();
-  if (a === "conta") { $("contaCasa").textContent = (guardar.ler("casa") || {}).nome || "Adicionar"; $("contaTrabalho").textContent = (guardar.ler("trabalho") || {}).nome || "Adicionar"; }
+  if (a === "conta") {
+    const casa = guardar.ler("casa"), trab = guardar.ler("trabalho");
+    $("contaCasa").textContent = casa ? textoEndereco(casa.nome, casa.numero, casa.complemento) : "Adicionar";
+    $("contaTrabalho").textContent = trab ? textoEndereco(trab.nome, trab.numero, trab.complemento) : "Adicionar";
+  }
   window.scrollTo(0, 0);
 }
 const telaSobre = (id, on) => { show(id, on); document.body.classList.toggle("sem-nav", !!document.querySelector(".tela.sobre:not(.hidden)")); };
@@ -79,7 +86,8 @@ function recentes() {
   const vistos = new Set(), out = [];
   for (const p of historico) {
     if (!p.ent_lat || vistos.has(p.entrega)) continue;
-    vistos.add(p.entrega); out.push({ nome: p.entrega, lat: p.ent_lat, lng: p.ent_lng });
+    vistos.add(p.entrega);
+    out.push({ nome: p.entrega, lat: p.ent_lat, lng: p.ent_lng, numero: p.ent_numero || "", complemento: p.ent_complemento || "" });
     if (out.length >= 8) break;
   }
   return out;
@@ -92,11 +100,11 @@ function itemLugar(icone, titulo, sub, onclick) {
 function montarLugares() {
   const el = $("lugares"); el.textContent = "";
   const r = recentes()[0];
-  if (r) el.append(itemLugar("🕒", r.nome.split(" · ")[0], r.nome.split(" · ")[1] || "Pelotas", () => escolherDestino(r)));
+  if (r) { const rot = rotuloLugar(r); el.append(itemLugar("🕒", rot.titulo, rot.sub, () => escolherDestino(r))); }
   const casa = guardar.ler("casa");
-  el.append(itemLugar("🏠", "Casa", casa ? casa.nome : "Adicionar endereço de casa", () => casa ? escolherDestino(casa) : definirLugar("casa")));
+  el.append(itemLugar("🏠", "Casa", casa ? textoEndereco(casa.nome, casa.numero, casa.complemento) : "Adicionar endereço de casa", () => casa ? escolherDestino(casa) : definirLugar("casa")));
   const trab = guardar.ler("trabalho");
-  if (trab) el.append(itemLugar("💼", "Trabalho", trab.nome, () => escolherDestino(trab)));
+  if (trab) el.append(itemLugar("💼", "Trabalho", textoEndereco(trab.nome, trab.numero, trab.complemento), () => escolherDestino(trab)));
   show("cardBoasVindas", historico.length === 0);
 }
 function montarServicos() {
@@ -107,10 +115,11 @@ function montarServicos() {
   $("gradeServicos").textContent = ""; CATEGORIAS.forEach(c => $("gradeServicos").append(tile(c)));
 }
 function definirLugar(tipo) {
+  definindo = tipo;
   abrirPlano();
   $("destino").placeholder = "Digite o endereço de " + (tipo === "casa" ? "casa" : "trabalho");
   $("destino").focus();
-  definindo = tipo;
+  atualizarBotaoPlano();
 }
 let definindo = null;
 function usarLugar(tipo) { const l = guardar.ler(tipo); if (l) escolherDestino(l); else definirLugar(tipo); }
@@ -119,29 +128,100 @@ function maisTarde() { toast("Agendamento chega em breve! Por enquanto, as entre
 // ---------- Planejar ----------
 function abrirPlano() {
   telaSobre("telaPlano", true);
-  if (!origem && aqui && aqui.nome) { origem = { ...aqui }; $("origem").value = aqui.nome; $("origem").dataset.escolhido = "1"; }
+  if (!origem && aqui && aqui.nome) {
+    origem = { nome: aqui.nome, lat: aqui.lat, lng: aqui.lng, numero: "", complemento: "" };
+    $("origem").value = aqui.nome; $("origem").dataset.escolhido = "1";
+    preencherDetalhe("origem", origem);
+  }
   const lista = $("listaRecentes"); lista.textContent = "";
   const base = origem || aqui;
   const rec = recentes();
   if (!rec.length) lista.innerHTML = '<p class="small" style="padding:8px 4px">Seus endereços recentes aparecem aqui.</p>';
   rec.forEach(r => {
-    const it = itemLugar("🕒", r.nome.split(" · ")[0], r.nome.split(" · ")[1] || "Pelotas", () => escolherDestino(r));
+    const rot = rotuloLugar(r);
+    const it = itemLugar("🕒", rot.titulo, rot.sub, () => escolherDestino(r));
     if (base) it.querySelector("i").insertAdjacentHTML("beforeend", `<small>${kmTxt(dist(base, r))}</small>`);
     lista.append(it);
   });
-  setTimeout(() => (origem ? $("destino") : $("origem")).focus(), 50);
+  atualizarBotaoPlano();
+  setTimeout(() => {
+    const ativo = document.activeElement;
+    if (ativo && /^num|^comp|^sn/.test(ativo.id || "")) return;
+    (origem ? $("destino") : $("origem")).focus();
+  }, 50);
 }
-function fecharPlano() { telaSobre("telaPlano", false); definindo = null; $("destino").placeholder = "Para onde?"; }
-function escolherDestino(e) {
-  destino = { nome: e.nome, lat: e.lat, lng: e.lng };
-  $("destino").value = e.nome; $("destino").dataset.escolhido = "1";
-  if (!origem) { abrirPlano(); toast("Agora escolha o endereço de retirada."); $("origem").focus(); return; }
-  seguirSePronto();
+function fecharPlano() { telaSobre("telaPlano", false); definindo = null; $("destino").placeholder = "Para onde?"; atualizarBotaoPlano(); }
+function escolherDestino(e) { definirLado("destino", e); }
+function sufixo(lado) { return lado === "origem" ? "Origem" : "Destino"; }
+function rotuloLugar(e) {
+  const partes = String(e.nome || "").split(" · ");
+  const extra = [e.numero === "S/N" ? "S/N" : e.numero ? "nº " + e.numero : "", e.complemento].filter(Boolean).join(" · ");
+  return { titulo: partes[0] || e.nome, sub: [partes[1], extra].filter(Boolean).join(" · ") || "Pelotas" };
 }
-function seguirSePronto() {
-  if (definindo && destino) { guardar.gravar(definindo, destino); toast((definindo === "casa" ? "Casa" : "Trabalho") + " salvo!");
-    definindo = null; destino = null; $("destino").value = ""; fecharPlano(); montarLugares(); return; }
-  if (origem && destino && $("origem").dataset.escolhido && $("destino").dataset.escolhido) abrirConfirmar();
+function ligarSn(lado) {
+  const s = sufixo(lado), sn = $("sn" + s), num = $("num" + s);
+  sn.onchange = () => { num.disabled = sn.checked; if (sn.checked) num.value = ""; };
+}
+function preencherDetalhe(lado, obj) {
+  const s = sufixo(lado);
+  show("det" + s, true);
+  const sn = obj.numero === "S/N";
+  $("sn" + s).checked = sn;
+  $("num" + s).disabled = sn;
+  $("num" + s).value = sn ? "" : (obj.numero || "");
+  $("comp" + s).value = obj.complemento || "";
+}
+function limparDetalhe(lado) {
+  const s = sufixo(lado);
+  show("det" + s, false);
+  $("sn" + s).checked = false;
+  $("num" + s).disabled = false;
+  $("num" + s).value = "";
+  $("comp" + s).value = "";
+  if (lado === "origem") origem = null; else destino = null;
+}
+function definirLado(lado, e) {
+  const obj = { nome: e.nome, lat: e.lat, lng: e.lng, numero: e.numero || "", complemento: e.complemento || "" };
+  if (lado === "origem") origem = obj; else destino = obj;
+  $(lado).value = e.nome;
+  $(lado).dataset.escolhido = "1";
+  preencherDetalhe(lado, obj);
+  if (lado === "destino" && !origem && !definindo) {
+    if ($("telaPlano").classList.contains("hidden")) abrirPlano();
+    if (!origem) { toast("Agora escolha o endereço de retirada."); $("origem").focus(); return; }
+  }
+  if (!obj.numero) $("num" + sufixo(lado)).focus();
+}
+function lerDetalhe(lado) {
+  const s = sufixo(lado);
+  return validarDetalhe($("num" + s).value, $("sn" + s).checked, $("comp" + s).value);
+}
+function atualizarBotaoPlano() {
+  const b = $("btnContinuar");
+  if (b) b.textContent = definindo ? "Salvar este endereço" : "Continuar";
+}
+function continuarPlano() {
+  if (definindo) {
+    if (!destino || $("destino").dataset.escolhido !== "1") { toast("Escolha o endereço na lista ou no mapa."); return; }
+    const b = lerDetalhe("destino");
+    if (!b.ok) { toast(b.erro); $("numDestino").focus(); return; }
+    guardar.gravar(definindo, { nome: destino.nome, lat: destino.lat, lng: destino.lng, numero: b.numero, complemento: b.complemento });
+    toast((definindo === "casa" ? "Casa" : "Trabalho") + " salvo!");
+    definindo = null; destino = null; $("destino").value = ""; limparDetalhe("destino");
+    fecharPlano(); montarLugares();
+    const casaSalva = guardar.ler("casa"), trabSalvo = guardar.ler("trabalho");
+    if ($("contaCasa")) $("contaCasa").textContent = casaSalva ? textoEndereco(casaSalva.nome, casaSalva.numero, casaSalva.complemento) : "Adicionar";
+    if ($("contaTrabalho")) $("contaTrabalho").textContent = trabSalvo ? textoEndereco(trabSalvo.nome, trabSalvo.numero, trabSalvo.complemento) : "Adicionar";
+    return;
+  }
+  if (!origem || $("origem").dataset.escolhido !== "1") { toast("Escolha o endereço de retirada na lista."); $("origem").focus(); return; }
+  if (!destino || $("destino").dataset.escolhido !== "1") { toast("Escolha o endereço de entrega na lista."); $("destino").focus(); return; }
+  const a = lerDetalhe("origem"), b = lerDetalhe("destino");
+  if (!a.ok) { toast("Retirada: " + a.erro); $("numOrigem").focus(); return; }
+  if (!b.ok) { toast("Entrega: " + b.erro); $("numDestino").focus(); return; }
+  origem.numero = a.numero; origem.complemento = a.complemento;
+  destino.numero = b.numero; destino.complemento = b.complemento;
+  abrirConfirmar();
 }
 
 // ---------- Escolher no mapa (pino arrastável) ----------
@@ -175,7 +255,8 @@ function enquadrar(m, pts, folhaSel) {
 // ---------- Confirmar com preço ----------
 async function abrirConfirmar() {
   telaSobre("telaConfirmar", true);
-  $("resOrigem").textContent = $("origem").value; $("resDestino").textContent = $("destino").value;
+  $("resOrigem").textContent = textoEndereco(origem.nome, origem.numero, origem.complemento);
+  $("resDestino").textContent = textoEndereco(destino.nome, destino.numero, destino.complemento);
   $("tagCategoria").textContent = categoria.nome;
   $("tipo").innerHTML = ""; categoria.itens.filter(i => !/NÃO/.test(i)).forEach(i => $("tipo").add(new Option(i, categoria.nome + ": " + i)));
   if (!mapa) mapa = criarMapa("mapa");
@@ -200,12 +281,16 @@ $("deliveryForm").addEventListener("submit", async ev => {
   ev.preventDefault();
   const botao = $("btnConfirmar"); botao.disabled = true;
   try {
-    const { data, error } = await db.rpc("criar_pedido", { p_retirada: $("origem").value.trim(), p_entrega: $("destino").value.trim(), p_item: $("tipo").value.slice(0, 60), ...params() });
+    const { data, error } = await db.rpc("criar_pedido", {
+      p_retirada: origem.nome.trim(), p_entrega: destino.nome.trim(), p_item: $("tipo").value.slice(0, 60),
+      p_ret_numero: origem.numero, p_ret_complemento: origem.complemento, p_ent_numero: destino.numero, p_ent_complemento: destino.complemento,
+      ...params() });
     if (error) throw error;
     const p = data[0];
     telaSobre("telaConfirmar", false); telaSobre("telaPlano", false);
-    mostrarPedido({ id: p.pedido_id, retirada: $("origem").value.trim(), entrega: $("destino").value.trim(), item: $("tipo").value, preco: p.valor,
-      status: "procurando", codigo: p.cod, ret_lat: origem.lat, ret_lng: origem.lng, ent_lat: destino.lat, ent_lng: destino.lng });
+    mostrarPedido({ id: p.pedido_id, retirada: origem.nome.trim(), entrega: destino.nome.trim(), item: $("tipo").value, preco: p.valor,
+      status: "procurando", codigo: p.cod, ret_lat: origem.lat, ret_lng: origem.lng, ent_lat: destino.lat, ent_lng: destino.lng,
+      ret_numero: origem.numero, ret_complemento: origem.complemento, ent_numero: destino.numero, ent_complemento: destino.complemento });
   } catch (e) { toast("Não foi possível pedir: " + erroMsg(e), 4000); }
   finally { botao.disabled = false; }
 });
@@ -214,9 +299,15 @@ $("deliveryForm").addEventListener("submit", async ev => {
 async function mostrarPedido(p) {
   pedido = p; ultimoS = null;
   telaSobre("pedido", true); show("btnCancelar", true); show("btnNovo", false); show("avaliar", false); show("btnWhats", true);
-  $("resumo").textContent = p.retirada + " → " + p.entrega + " · " + p.item + " · " + money(p.preco);
+  $("resumo").textContent = textoEndereco(p.retirada, p.ret_numero, p.ret_complemento) + " → " +
+    textoEndereco(p.entrega, p.ent_numero, p.ent_complemento) + " · " + p.item + " · " + money(p.preco);
   if (!mapaPed) mapaPed = criarMapa("mapaPedido"); else setTimeout(() => mapaPed.invalidateSize(), 60);
-  if (p.ret_lat == null) { const { data } = await db.from("pedidos").select("ret_lat,ret_lng,ent_lat,ent_lng").eq("id", p.id).single(); Object.assign(p, data); }
+  if (p.ret_lat == null) {
+    const { data } = await db.from("pedidos").select("ret_lat,ret_lng,ent_lat,ent_lng,ret_numero,ret_complemento,ent_numero,ent_complemento").eq("id", p.id).single();
+    Object.assign(p, data || {});
+    $("resumo").textContent = textoEndereco(p.retirada, p.ret_numero, p.ret_complemento) + " → " +
+      textoEndereco(p.entrega, p.ent_numero, p.ent_complemento) + " · " + p.item + " · " + money(p.preco);
+  }
   camadasPed.forEach(c => c.remove());
   camadasPed = [L.marker([p.ret_lat, p.ret_lng], { icon: icone.retirada() }).addTo(mapaPed), L.marker([p.ent_lat, p.ent_lng], { icon: icone.entrega() }).addTo(mapaPed)];
   setTimeout(() => enquadrar(mapaPed, [[p.ret_lat, p.ret_lng], [p.ent_lat, p.ent_lng]], "#pedido .folha"), 150);
@@ -226,6 +317,7 @@ async function mostrarPedido(p) {
     .on("postgres_changes", { event: "UPDATE", schema: "public", table: "pedidos", filter: "id=eq." + p.id }, atualizarStatus)
     .on("postgres_changes", { event: "*", schema: "public", table: "posicoes", filter: "pedido_id=eq." + p.id }, m => m.new && m.new.lat && moverMoto(m.new.lat, m.new.lng))
     .subscribe();
+  sincronizarChatCliente();
 }
 function moverMoto(lat, lng) {
   if (!mapaPed) return;
@@ -259,6 +351,11 @@ async function atualizarStatus() {
     show("btnCancelar", false); show("btnNovo", true); show("btnWhats", false);
     if (s.status === "entregue") montarAvaliacao();
   }
+  sincronizarChatCliente();
+}
+function sincronizarChatCliente() {
+  if (!pedido || !usuario) { Chat.parar(); return; }
+  Chat.ligar({ pedidoId: pedido.id, meuId: usuario.id, status: pedido.status, outro: "Motoboy" });
 }
 async function cancelarPedido() {
   if (!pedido) return;
@@ -274,15 +371,17 @@ function sairDoPedido() {
 function novoPedido() {
   if (canal) db.removeChannel(canal);
   pedido = null; canal = null; origem = null; destino = null; rota = null;
+  Chat.parar();
   if (motoMarker) { motoMarker.remove(); motoMarker = null; }
   $("origem").value = ""; $("destino").value = ""; $("origem").dataset.escolhido = ""; $("destino").dataset.escolhido = "";
+  limparDetalhe("origem"); limparDetalhe("destino");
   telaSobre("pedido", false); irAba("home"); carregarHistorico();
 }
 
 // Compartilhar rastreio (WhatsApp): status, motoboy, código e link do mapa com a posição atual.
 function compartilharWhats() {
   if (!pedido) return;
-  let t = `🛵 *É-Já* — entrega a caminho!\nDe: ${pedido.retirada}\nPara: ${pedido.entrega}`;
+  let t = `🛵 *É-Já* — entrega a caminho!\nDe: ${textoEndereco(pedido.retirada, pedido.ret_numero, pedido.ret_complemento)}\nPara: ${textoEndereco(pedido.entrega, pedido.ent_numero, pedido.ent_complemento)}`;
   if (pedido.moto) t += `\nMotoboy: ${pedido.moto}`;
   if (pedido.codigo) t += `\nCódigo para receber: *${pedido.codigo}*`;
   if (pedido.motoPos) t += `\nOnde está agora: https://maps.google.com/?q=${pedido.motoPos[0].toFixed(5)},${pedido.motoPos[1].toFixed(5)}`;
@@ -316,7 +415,7 @@ async function carregarHistorico() {
       new Date(p.criado_em).toLocaleString("pt-BR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) + " · " + nomes[p.status] + (p.nota ? " · " + "★".repeat(p.nota) : ""),
       async () => {
         if (["procurando", "aceito", "coletado"].includes(p.status)) { const { data } = await db.rpc("meu_pedido_ativo"); if (data && data[0]) mostrarPedido(data[0]); }
-        else toast(p.retirada + " → " + p.entrega + " · " + money(p.preco), 4000);
+        else toast(textoEndereco(p.retirada, p.ret_numero, p.ret_complemento) + " → " + textoEndereco(p.entrega, p.ent_numero, p.ent_complemento) + " · " + money(p.preco), 4000);
       });
     b.querySelector("em").textContent = money(p.preco);
     el.append(b);

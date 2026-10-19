@@ -152,18 +152,37 @@ function criarMapaGL(id, opcoes) {
   });
   const fila = [];
   let estiloPronto = false;
+  let geracaoEstilo = 0;
   function quandoPronto(fn) { if (estiloPronto) fn(); else fila.push(fn); }
-  estiloSuave().then(style => {
-    gl.setStyle(style);
-    gl.once("style.load", () => { estiloPronto = true; fila.splice(0).forEach(fn => fn()); });
-  }).catch(() => {
-    gl.setStyle({
-      version: 8,
-      sources: { osm: { type: "raster", tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"], tileSize: 256, attribution: "© OpenStreetMap" } },
-      layers: [{ id: "osm", type: "raster", source: "osm" }]
-    });
-    gl.once("style.load", () => { estiloPronto = true; fila.splice(0).forEach(fn => fn()); });
-  });
+  // No MapLibre 4, setStyle não dispara style.load de novo, e isStyleLoaded fica
+  // falso até o idle. A rota entra quando o estilo já tem camadas.
+  function aplicarEstilo(style) {
+    const minha = ++geracaoEstilo;
+    let aplicado = false;
+    const drenar = () => {
+      if (!aplicado || minha !== geracaoEstilo || estiloPronto) return;
+      const st = gl.getStyle();
+      if (!st || !(st.layers || []).length) return;
+      const pendente = fila.splice(0);
+      const falhou = [];
+      pendente.forEach(fn => { try { fn(); } catch (e) { falhou.push(fn); } });
+      if (falhou.length) { fila.unshift(...falhou); return; }
+      estiloPronto = true;
+      gl.off("styledata", drenar);
+      gl.off("idle", drenar);
+    };
+    gl.on("styledata", drenar);
+    gl.on("idle", drenar);
+    try { gl.setStyle(style, { diff: false }); }
+    catch (e) { gl.setStyle(style); }
+    aplicado = true;
+    drenar();
+  }
+  estiloSuave().then(aplicarEstilo).catch(() => aplicarEstilo({
+    version: 8,
+    sources: { osm: { type: "raster", tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"], tileSize: 256, attribution: "© OpenStreetMap" } },
+    layers: [{ id: "osm", type: "raster", source: "osm" }]
+  }));
   const api = ouvintes({
     gl, _eja: "gl",
     getContainer: () => el,
@@ -224,7 +243,7 @@ function criarMapaGL(id, opcoes) {
           id, type: "line", source: id,
           layout: { "line-cap": "round", "line-join": "round" },
           paint: {
-            "line-color": (estilo && estilo.color) || "#111",
+            "line-color": (estilo && estilo.color) || "#111111",
             "line-width": (estilo && estilo.weight) || 7,
             "line-opacity": estilo && estilo.opacity != null ? estilo.opacity : 1
           }

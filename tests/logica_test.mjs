@@ -31,6 +31,12 @@ assert.equal(casosNumero[7].ok, false);
 assert.equal(run(`textoEndereco("Rua A · Centro", "120", "fundos")`), "Rua A · Centro, nº 120 — fundos");
 assert.equal(run(`textoEndereco("Rua A", "S/N", null)`), "Rua A, S/N");
 assert.equal(run(`textoEndereco("Rua A", null, null)`), "Rua A");
+assert.equal(run(`expandirAbrev("Av Brasil")`), "Avenida Brasil");
+assert.equal(run(`expandirAbrev("Av. Brasil")`), "Avenida Brasil");
+assert.equal(run(`expandirAbrev("R. Gonçalves Chaves")`), "Rua Gonçalves Chaves");
+assert.equal(run(`expandirAbrev("est da costa")`), "Estrada da costa");
+assert.ok(run(`consultasEndereco("Av Brasil")`).includes("Avenida Brasil"));
+assert.ok(run(`consultasEndereco("Av Brasil")`).includes("avenida brasil"));
 
 const osrm = {
   code: "Ok",
@@ -48,11 +54,18 @@ context.osrm = osrm;
 assert.equal(run(`instrucaoOsrm(osrm.routes[0].legs[0].steps[1])`), "Vire à esquerda na Rua A");
 assert.equal(run(`instrucaoOsrm({ name: "", maneuver: { type: "roundabout", exit: 2, modifier: "straight" } })`), "Na rotatória, pegue a 2ª saída");
 assert.equal(run(`instrucaoOsrm({ name: "Rua Fim", maneuver: { type: "arrive", modifier: "straight" } })`), "Você chegou ao destino");
+assert.equal(run(`instrucaoOsrm({ name: "Avenida Arthur Lange", maneuver: { type: "continue", modifier: "uturn" } })`), "Faça o retorno na Avenida Arthur Lange");
+assert.equal(run(`instrucaoOsrm({ name: "BR-116", maneuver: { type: "uturn", modifier: "uturn" } })`), "Faça o retorno na BR-116");
+assert.equal(run(`instrucaoOsrm({ name: "Rua A", maneuver: { type: "end of road", modifier: "left" } })`), "No fim da rua, vire à esquerda na Rua A");
+assert.equal(run(`instrucaoOsrm({ name: "Rua B", maneuver: { type: "new name", modifier: "straight" } })`), "Continue em frente na Rua B");
+assert.equal(run(`instrucaoOsrm({ name: "", maneuver: { type: "on ramp", modifier: "slight right" } })`), "Pegue a rampa levemente à direita");
 assert.equal(run(`setaOsrm({ type: "turn", modifier: "right" })`), "↱");
+assert.equal(run(`setaOsrm({ type: "continue", modifier: "uturn" })`), "↩");
 
 const rota = run(`interpretarOsrm(osrm)`);
 assert.equal(rota.passos.length, 3);
-assert.equal(rota.passos[1].alongM, 150);
+assert.ok(rota.passos[0].alongM < 5, "partida " + rota.passos[0].alongM);
+assert.ok(rota.passos[1].alongM > 20 && rota.passos[1].alongM < rota.passos[2].alongM, "manobra " + rota.passos[1].alongM);
 assert.equal(rota.linha[0][0], -31.77);
 
 // Linha norte-sul de ~111 m em Pelotas. Meio da linha ~0 m; 0,001° a leste ~90 m.
@@ -80,7 +93,33 @@ const painel = run(`painelNav(-31.77, -52.34)`);
 assert.equal(painel.instrucao, "Vire à esquerda na Rua A");
 assert.ok(painel.restanteM > 0);
 
+const longa = {
+  code: "Ok",
+  routes: [{
+    distance: 1330, duration: 180,
+    geometry: { coordinates: [[-52.34, -31.77], [-52.34, -31.766], [-52.34, -31.762], [-52.34, -31.758]] },
+    legs: [{ steps: [
+      { distance: 445, name: "Rua de saída", maneuver: { type: "depart", modifier: "straight", location: [-52.34, -31.77] } },
+      { distance: 445, name: "Avenida Arthur Lange", maneuver: { type: "continue", modifier: "uturn", location: [-52.34, -31.766] } },
+      { distance: 440, name: "BR-116", maneuver: { type: "turn", modifier: "right", location: [-52.34, -31.762] } },
+      { distance: 0, name: "", maneuver: { type: "arrive", modifier: "straight", location: [-52.34, -31.758] } }
+    ] }]
+  }]
+};
+context.longa = longa;
+run(`definirRotaNav(interpretarOsrm(longa), "p:ent", 9000)`);
+const noInicio = run(`painelNav(-31.77, -52.34)`);
+assert.match(noInicio.instrucao, /Faça o retorno na Avenida Arthur Lange/);
+assert.ok(noInicio.metrosManobra > 300, "distância até o retorno " + noInicio.metrosManobra);
+assert.match(run(`textoManobra(${JSON.stringify(noInicio.instrucao)}, ${noInicio.metrosManobra}, ${JSON.stringify(noInicio.tipo)})`), /^Em \d+ m faça o retorno/);
+const depois = run(`painelNav(-31.764, -52.34)`);
+assert.match(depois.instrucao, /Vire à direita na BR-116/);
+assert.ok(depois.metrosManobra > 80 && depois.metrosManobra < 400, "avançou para a próxima manobra " + depois.metrosManobra);
+assert.match(run(`textoManobra(${JSON.stringify(depois.instrucao)}, ${depois.metrosManobra}, ${JSON.stringify(depois.tipo)})`), /^Em \d+ m vire à direita/);
+
 assert.match(run(`textoVoz("Vire à esquerda na Rua A", 180, "turn")`), /^Em 180 metros, vire/);
+assert.equal(run(`textoManobra("Vire à esquerda na Rua A", 200, "turn")`), "Em 200 m vire à esquerda na Rua A");
+assert.equal(run(`textoManobra("Você chegou ao destino", 10, "arrive")`), "Você chegou ao destino");
 assert.equal(run(`textoVoz("Você chegou ao destino", 10, "arrive")`), "Você chegou ao destino");
 assert.match(run(`formatarDistancia(1540)`), /km/);
 assert.equal(run(`formatarDuracao(125)`), "2 min");
@@ -109,5 +148,21 @@ assert.equal(bloqueado.travou, true);
 assert.equal(bloqueado.deNovo, true);
 
 assert.equal(run(`contarNaoLidas([{autor_id:"a",lida_em:null},{autor_id:"b",lida_em:null},{autor_id:"b",lida_em:"x"}], "a")`), 1);
+
+const buscaMock = await run(`(async () => {
+  const urls = [];
+  const buscar = async (url, opts) => {
+    urls.push({ url: String(url), ua: opts && opts.headers && opts.headers["User-Agent"] || "" });
+    if (String(url).includes("nominatim")) {
+      return { ok: true, json: async () => [{ lat: "-31.774", lon: "-52.353", name: "Avenida Brasil", address: { road: "Avenida Brasil", city: "Pelotas", suburb: "Centro" } }] };
+    }
+    return { ok: true, json: async () => ({ features: [] }) };
+  };
+  const lista = await buscarEnderecos("Av Brasil", buscar);
+  return { urls, nome: lista[0] && lista[0].nome };
+})()`);
+assert.ok(buscaMock.urls.some(u => /photon/.test(u.url) && /Avenida%20Brasil/.test(u.url) && !/Pelotas/.test(u.url)), "Photon não recebe o sufixo Pelotas");
+assert.ok(buscaMock.urls.some(u => /nominatim/.test(u.url) && /E-Ja/.test(u.ua)), "Nominatim só entra se o Photon vier vazio, com User-Agent");
+assert.match(buscaMock.nome, /Avenida Brasil/);
 
 console.log("logica_test: ok");

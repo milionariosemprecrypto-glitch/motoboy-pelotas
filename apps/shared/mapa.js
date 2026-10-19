@@ -35,20 +35,6 @@ function temWebGL() {
   try { const c = document.createElement("canvas"); return !!(c.getContext("webgl2") || c.getContext("webgl")); } catch { return false; }
 }
 
-// Cria um mapa Leaflet com o fundo suave. Marcadores, rotas e fitBounds continuam sendo do Leaflet.
-function criarMapa(id, opcoes = {}) {
-  const m = L.map(id, { zoomControl: false, attributionControl: true, ...opcoes }).setView(PELOTAS, 14);
-  m.attributionControl.setPrefix(false);
-  const raster = () => L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",
-    { maxZoom: 19, className: "tiles-suaves", attribution: "© OpenStreetMap" }).addTo(m);
-  if (window.maplibregl && L.maplibreGL && temWebGL()) {
-    estiloSuave()
-      .then(style => { m._gl = L.maplibreGL({ style, attribution: '© <a href="https://openfreemap.org">OpenFreeMap</a> © OpenStreetMap' }).addTo(m); })
-      .catch(raster);
-  } else raster();
-  setTimeout(() => m.invalidateSize(), 100);
-  return m;
-}
 
 // Marcadores no estilo do app
 const icone = {
@@ -68,6 +54,145 @@ function orientarMarcador(marker, graus) {
 }
 
 function ajustarMapa(m) {
+  if (!m) return;
   m.invalidateSize();
-  if (m._gl) { try { m._gl.getMaplibreMap().resize(); m._gl._update(); } catch {} }
+  if (m._gl) { try { m._gl.getMaplibreMap().resize(); m._gl._update(); } catch (e) {} }
+}
+
+const mapasVivos = new Set();
+function criarMapa(id, opcoes = {}) {
+  const m = L.map(id, { zoomControl: false, attributionControl: true, ...opcoes }).setView(PELOTAS, 14);
+  m.attributionControl.setPrefix(false);
+  const raster = () => L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+    { maxZoom: 19, className: "tiles-suaves", attribution: "© OpenStreetMap" }).addTo(m);
+  if (window.maplibregl && L.maplibreGL && temWebGL()) {
+    estiloSuave()
+      .then(style => { m._gl = L.maplibreGL({ style, attribution: '© <a href="https://openfreemap.org">OpenFreeMap</a> © OpenStreetMap' }).addTo(m); })
+      .catch(raster);
+  } else raster();
+  mapasVivos.add(m);
+  setTimeout(() => ajustarMapa(m), 80);
+  return m;
+}
+
+function redimensionarMapas() {
+  mapasVivos.forEach(m => ajustarMapa(m));
+}
+window.addEventListener("resize", redimensionarMapas);
+window.addEventListener("orientationchange", () => setTimeout(redimensionarMapas, 180));
+window.addEventListener("eja-insets", redimensionarMapas);
+if (window.visualViewport) window.visualViewport.addEventListener("resize", redimensionarMapas);
+
+// Folha inferior com três paradas: colapsada, meio, cheia.
+// O arraste começa só na alça (toque ou mouse), para o mapa continuar recebendo o pan.
+function ligarFolha(folha, opts) {
+  if (!folha || folha.dataset.folha) return;
+  opts = opts || {};
+  folha.dataset.folha = "1";
+  folha.classList.add("folha-viva");
+  const alca = folha.querySelector(".alca");
+  if (!alca) return;
+  alca.style.touchAction = "none";
+  let arrastando = false, ponteiro = null, y0 = 0, h0 = 0, colCache = 0;
+
+  function vhAgora() {
+    return window.visualViewport ? window.visualViewport.height : window.innerHeight;
+  }
+  function medirColapsada(vh) {
+    if (typeof opts.colapsada === "number") return opts.colapsada;
+    if (colCache && arrastando) return colCache;
+    const snap = folha.dataset.snap;
+    const h0s = folha.style.height, m0s = folha.style.maxHeight, t0s = folha.style.transition;
+    folha.dataset.snap = "colapsada";
+    folha.style.transition = "none";
+    folha.style.height = "auto";
+    folha.style.maxHeight = "none";
+    const h = folha.scrollHeight;
+    folha.style.height = h0s;
+    folha.style.maxHeight = m0s;
+    folha.style.transition = t0s;
+    if (snap) folha.dataset.snap = snap;
+    colCache = Math.max(150, Math.min(h || 220, Math.round(vh * 0.46)));
+    return colCache;
+  }
+  function alturas() {
+    const vh = vhAgora();
+    const col = medirColapsada(vh);
+    const meio = Math.round(vh * 0.52);
+    const cheia = Math.round(Math.min(vh * 0.88, vh - 24));
+    const a = col, b = Math.max(a + 36, meio), c = Math.max(b + 36, cheia);
+    return [a, b, c];
+  }
+  function publicar(h) {
+    if (!folha.getClientRects().length) return;
+    document.documentElement.style.setProperty("--folha-altura", h + "px");
+  }
+  function aplicar(h, animar) {
+    const alts = alturas();
+    h = Math.max(alts[0], Math.min(alts[2], h));
+    folha.style.transition = animar ? "height .22s ease" : "none";
+    folha.style.height = h + "px";
+    folha.style.maxHeight = h + "px";
+    const nome = h <= (alts[0] + alts[1]) / 2 ? "colapsada" : h <= (alts[1] + alts[2]) / 2 ? "meio" : "cheia";
+    folha.dataset.snap = nome;
+    publicar(h);
+    return h;
+  }
+  function avisar() {
+    window.dispatchEvent(new CustomEvent("eja-folha", { detail: { folha } }));
+    setTimeout(redimensionarMapas, 240);
+  }
+  function soltar(h) {
+    const alts = alturas();
+    let melhor = alts[0], dist = Infinity;
+    alts.forEach(a => { const d = Math.abs(a - h); if (d < dist) { dist = d; melhor = a; } });
+    aplicar(melhor, true);
+    avisar();
+  }
+  folha._ejaIr = function (indice) {
+    const alts = alturas();
+    aplicar(alts[Math.max(0, Math.min(alts.length - 1, indice | 0))], true);
+    avisar();
+  };
+  alca.addEventListener("pointerdown", ev => {
+    if (ev.button != null && ev.button !== 0) return;
+    arrastando = true;
+    ponteiro = ev.pointerId;
+    y0 = ev.clientY;
+    h0 = parseFloat(folha.style.height) || folha.getBoundingClientRect().height;
+    try { alca.setPointerCapture(ev.pointerId); } catch (e) {}
+    ev.preventDefault();
+    ev.stopPropagation();
+  });
+  alca.addEventListener("pointermove", ev => {
+    if (!arrastando || ev.pointerId !== ponteiro) return;
+    aplicar(h0 + (y0 - ev.clientY), false);
+    ev.preventDefault();
+    ev.stopPropagation();
+  });
+  function fim(ev) {
+    if (!arrastando || (ev && ev.pointerId != null && ev.pointerId !== ponteiro)) return;
+    arrastando = false;
+    const dy = y0 - (ev && ev.clientY != null ? ev.clientY : y0);
+    if (ev && ev.type !== "pointercancel" && Math.abs(dy) < 12) {
+      const ordem = ["colapsada", "meio", "cheia"];
+      const i = Math.max(0, ordem.indexOf(folha.dataset.snap));
+      folha._ejaIr((i + 1) % 3);
+      return;
+    }
+    soltar(parseFloat(folha.style.height) || folha.getBoundingClientRect().height);
+  }
+  alca.addEventListener("pointerup", fim);
+  alca.addEventListener("pointercancel", fim);
+  const inicial = opts.inicial == null ? 0 : opts.inicial;
+  aplicar(alturas()[inicial], false);
+  window.addEventListener("resize", () => {
+    if (!folha.dataset.snap) return;
+    colCache = 0;
+    folha._ejaIr(folha.dataset.snap === "cheia" ? 2 : folha.dataset.snap === "meio" ? 1 : 0);
+  });
+}
+
+function folhaIr(folha, indice) {
+  if (folha && folha._ejaIr) folha._ejaIr(indice);
 }

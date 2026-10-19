@@ -118,26 +118,29 @@
           <button id="segGanhos" class="icone-btn" onclick="motoAba('ganhos')" aria-label="Ganhos"><svg viewBox="0 0 24 24"><path d="M5 6h14M5 12h14M5 18h14"/></svg></button>
         </div>
         <div id="barraBusca" class="barra-busca hidden"><i></i></div>
+        <div class="folha-miolo">
         <div id="motoInicio">
           <div id="motoStatus" class="painel-sub">Fique online para receber corridas.</div>
           <div id="corrida" class="hidden">
-            <span class="pill">Corrida em andamento</span>
             <h2 id="corridaTitulo"></h2>
-            <div id="corridaLugar" class="lugar-card">
-              <div id="lugarRotulo" class="small"></div>
-              <div id="lugarNum" class="lugar-num"></div>
-              <div id="lugarRua"></div>
-              <div id="lugarComp" class="small"></div>
-            </div>
-            <div id="corridaInfo" class="painel-sub"></div>
             <label for="codigoEntrega" id="codigoLabel" class="hidden">Código de confirmação do destinatário</label>
             <input id="codigoEntrega" class="hidden" inputmode="numeric" maxlength="4" placeholder="4 dígitos">
-            <button id="btnChat" class="secondary hidden" type="button" onclick="Chat.alternar()">Conversar <span id="chatBadge" class="chat-badge hidden">0</span></button>
-            <div class="nav-ext">
-              <button class="secondary" type="button" onclick="abrirNavegacao('google')">Google Maps</button>
-              <button class="secondary" type="button" onclick="abrirNavegacao('waze')">Waze</button>
+            <button id="corridaBtn" class="primary" type="button" onclick="avancar()"></button>
+            <div class="folha-extra">
+              <span class="pill">Corrida em andamento</span>
+              <div id="corridaLugar" class="lugar-card">
+                <div id="lugarRotulo" class="small"></div>
+                <div id="lugarNum" class="lugar-num"></div>
+                <div id="lugarRua"></div>
+                <div id="lugarComp" class="small"></div>
+              </div>
+              <div id="corridaInfo" class="painel-sub"></div>
+              <button id="btnChat" class="secondary hidden" type="button" onclick="Chat.alternar()">Conversar <span id="chatBadge" class="chat-badge hidden">0</span></button>
+              <div class="nav-ext">
+                <button class="secondary" type="button" onclick="abrirNavegacao('google')">Google Maps</button>
+                <button class="secondary" type="button" onclick="abrirNavegacao('waze')">Waze</button>
+              </div>
             </div>
-            <button id="corridaBtn" class="primary" onclick="avancar()"></button>
           </div>
         </div>
         <div id="motoGanhos" class="hidden">
@@ -145,11 +148,12 @@
           <div id="ganhosTotal" class="total">R$ 0,00</div>
           <div id="ganhosResumo" class="painel-sub"></div>
           <div id="ganhosLista"></div>
-          <button class="secondary" onclick="motoAba('inicio')">Voltar ao mapa</button>
-          <button class="link" onclick="db.auth.signOut()">Sair da conta</button>
+          <button class="secondary" type="button" onclick="motoAba('inicio')">Voltar ao mapa</button>
+          <button class="link" type="button" onclick="db.auth.signOut()">Sair da conta</button>
           <a class="link" href="https://eja-site.pages.dev/termos-motoboy/" target="_blank">Termos do Motoboy</a>
           <a class="link" href="https://eja-site.pages.dev/privacidade/" target="_blank">Política de Privacidade</a>
-          <button class="btn-perigo" onclick="excluirConta()">Excluir minha conta</button>
+          <button class="btn-perigo" type="button" onclick="excluirConta()">Excluir minha conta</button>
+        </div>
         </div>
       </div>
     </div>

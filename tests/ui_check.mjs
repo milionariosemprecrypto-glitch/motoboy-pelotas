@@ -8,7 +8,7 @@ const puppeteer = require("puppeteer-core");
 const browser = await puppeteer.launch({
   executablePath: "/usr/bin/google-chrome",
   headless: "new",
-  args: ["--no-sandbox", "--disable-dev-shm-usage", "--window-size=390,844"]
+  args: ["--no-sandbox", "--disable-dev-shm-usage", "--window-size=800,1280"]
 });
 const falhas = [];
 function ok(cond, msg) {
@@ -18,7 +18,7 @@ function ok(cond, msg) {
 
 try {
   const cliente = await browser.newPage();
-  await cliente.setViewport({ width: 390, height: 844 });
+  await cliente.setViewport({ width: 360, height: 740, isMobile: true, hasTouch: true });
   await cliente.evaluateOnNewDocument(() => localStorage.setItem("eja_onboarding_ok", "true"));
   await cliente.goto("http://127.0.0.1:8081/", { waitUntil: "networkidle2", timeout: 30000 });
   await cliente.waitForFunction(() => typeof definirLado === "function" && typeof continuarPlano === "function");
@@ -54,8 +54,70 @@ try {
   ok(/S\/N/.test(numero.destino), "confirmação mostra S/N na entrega: " + numero.destino);
   await cliente.screenshot({ path: "/opt/cursor/artifacts/cliente-numero.png" });
 
+  const pedidoMapa = async (largura, altura, arquivo) => {
+    await cliente.setViewport({ width: largura, height: altura, isMobile: true, hasTouch: true });
+    const info = await cliente.evaluate(async () => {
+      db.rpc = async (fn) => {
+        if (fn === "status_pedido") return { data: [{ status: "coletado", motoboy_nome: "Julio Motoboy", placa: "ABC1D23", modelo: "CG" }], error: null };
+        return { data: null, error: null };
+      };
+      db.from = () => ({
+        select() { return this; }, eq() { return this; },
+        maybeSingle: async () => ({ data: { lat: -31.74, lng: -52.338 }, error: null }),
+        single: async () => ({ data: null, error: null })
+      });
+      db.channel = () => ({ on() { return this; }, subscribe() { return this; } });
+      db.removeChannel = () => {};
+      mostrarPedido({
+        id: "p-mapa", retirada: "Rua Estevão Jorge dos Reis · Fragata", entrega: "Pelotas International Airport · Areal",
+        item: "Entrega rápida: Outro item permitido", preco: 14.58, status: "coletado", codigo: "5706",
+        ret_lat: -31.758, ret_lng: -52.351, ent_lat: -31.718, ent_lng: -52.327,
+        ret_numero: "91", ent_numero: "13", ret_complemento: null, ent_complemento: null
+      });
+      await new Promise(r => setTimeout(r, 500));
+      moverMoto(-31.74, -52.338);
+      await new Promise(r => setTimeout(r, 400));
+      const mapa = $("mapaPedido").getBoundingClientRect();
+      const folha = $("folhaPedido").getBoundingClientRect();
+      const marcas = [...document.querySelectorAll("#mapaPedido .pin-a, #mapaPedido .pin-b, #mapaPedido .pin-moto")].map(el => {
+        const b = el.getBoundingClientRect();
+        const cy = b.top + b.height / 2, cx = b.left + b.width / 2;
+        return { cls: el.className, visivel: cy > mapa.top + 8 && cy < folha.top - 4 && cx > mapa.left && cx < mapa.right };
+      });
+      return {
+        mapH: Math.round(mapa.height), vh: window.innerHeight,
+        snap: $("folhaPedido").dataset.snap,
+        marcas,
+        folhaCobre: folha.height / window.innerHeight
+      };
+    });
+    await cliente.screenshot({ path: arquivo });
+    return info;
+  };
+  const pedidoPequeno = await pedidoMapa(360, 740, "/opt/cursor/artifacts/cliente-pedido-360.png");
+  ok(pedidoPequeno.mapH >= pedidoPequeno.vh - 8, "mapa do cliente ocupa a tela (" + pedidoPequeno.mapH + "/" + pedidoPequeno.vh + ")");
+  ok(pedidoPequeno.snap === "colapsada" && pedidoPequeno.folhaCobre < 0.55, "folha do pedido começa colapsada (" + pedidoPequeno.snap + ")");
+  ok(pedidoPequeno.marcas.filter(m => /pin-a/.test(m.cls) && m.visivel).length === 1, "ponto A visível acima da folha");
+  ok(pedidoPequeno.marcas.filter(m => /pin-b/.test(m.cls) && m.visivel).length === 1, "ponto B visível acima da folha");
+  ok(pedidoPequeno.marcas.filter(m => /pin-moto/.test(m.cls) && m.visivel).length === 1, "moto ao vivo visível acima da folha");
+  const pedidoGrande = await pedidoMapa(800, 1280, "/opt/cursor/artifacts/cliente-pedido-grande.png");
+  ok(pedidoGrande.marcas.every(m => m.visivel), "tela grande mostra A, B e a moto");
+
+  const arrasteCliente = await cliente.evaluate(() => {
+    const folha = $("folhaPedido");
+    const antes = folha.getBoundingClientRect().height;
+    const alca = folha.querySelector(".alca");
+    const r = alca.getBoundingClientRect();
+    const ev = (tipo, y) => alca.dispatchEvent(new PointerEvent(tipo, { bubbles: true, cancelable: true, pointerId: 1, pointerType: "touch", button: 0, clientX: r.left + 20, clientY: y }));
+    ev("pointerdown", r.top + 10);
+    ev("pointermove", r.top - 280);
+    ev("pointerup", r.top - 280);
+    return { antes, depois: folha.getBoundingClientRect().height, snap: folha.dataset.snap };
+  });
+  ok(arrasteCliente.depois > arrasteCliente.antes + 40 && arrasteCliente.snap !== "colapsada", "folha do cliente sobe ao arrastar (" + arrasteCliente.snap + ")");
+
   const moto = await browser.newPage();
-  await moto.setViewport({ width: 390, height: 844 });
+  await moto.setViewport({ width: 360, height: 740, isMobile: true, hasTouch: true });
   await moto.goto("http://127.0.0.1:8082/", { waitUntil: "networkidle2", timeout: 30000 });
   await moto.waitForFunction(() => typeof mostrarCorrida === "function" && typeof interpretarOsrm === "function");
   const nav = await moto.evaluate(async () => {
@@ -100,6 +162,7 @@ try {
     definirRotaNav(interpretarOsrm(osrm), id + ":ret", Date.now());
     mostrarCorrida();
     await new Promise(r => setTimeout(r, 300));
+    const painel = document.querySelector("#telaTrabalho .painel");
     const antes = {
       instrucao: $("navInstrucao").textContent,
       dist: $("navDist").textContent,
@@ -107,7 +170,14 @@ try {
       numero: $("lugarNum").textContent,
       comp: $("lugarComp").textContent,
       chatSome: $("btnChat").classList.contains("hidden"),
-      waze: !!document.querySelector("button[onclick=\"abrirNavegacao('waze')\"]")
+      waze: !!document.querySelector("button[onclick=\"abrirNavegacao('waze')\"]"),
+      snap: painel.dataset.snap,
+      extra: getComputedStyle(painel.querySelector(".folha-extra")).display,
+      btn: $("corridaBtn").textContent,
+      mapH: Math.round($("mapa").getBoundingClientRect().height),
+      vh: window.innerHeight,
+      etaBottom: Math.round($("navEta").getBoundingClientRect().bottom),
+      folhaTop: Math.round(painel.getBoundingClientRect().top)
     };
     Chat.alternar();
     await new Promise(r => setTimeout(r, 50));
@@ -116,15 +186,39 @@ try {
     await Chat._enviar();
     return { antes, lista, depois: $("ejaChatLista").textContent, voz: $("navVoz").textContent };
   });
-  ok(nav.antes.banner && /esquerda|Siga/.test(nav.antes.instrucao), "banner de navegação: " + nav.antes.instrucao);
+  ok(nav.antes.banner && /Em .+esquerda|Siga/.test(nav.antes.instrucao), "banner com distância até a manobra: " + nav.antes.instrucao);
   ok(nav.antes.dist !== "—", "distância restante: " + nav.antes.dist);
   ok(nav.antes.numero === "nº 100" && /praça/.test(nav.antes.comp), "motoboy vê nº 100 e complemento");
-  ok(!nav.antes.chatSome && nav.antes.waze, "chat e botão do Waze aparecem na corrida");
+  ok(!nav.antes.chatSome && nav.antes.waze, "chat e botão do Waze existem na corrida");
+  ok(nav.antes.snap === "colapsada" && nav.antes.extra === "none", "navegação começa com a folha colapsada");
+  ok(/coletei/i.test(nav.antes.btn), "ação da vez fica visível: " + nav.antes.btn);
+  ok(nav.antes.mapH >= nav.antes.vh - 8, "mapa do motoboy ocupa a tela (" + nav.antes.mapH + ")");
+  ok(nav.antes.etaBottom <= nav.antes.folhaTop + 4, "ETA fica acima da folha");
   ok(/Estou na porta/.test(nav.lista) && /Pode descer/.test(nav.depois), "conversa mostra a mensagem recebida e a enviada");
   ok(nav.voz === "Voz off", "voz começa desligada");
   await moto.screenshot({ path: "/opt/cursor/artifacts/motoboy-chat.png" });
   await moto.evaluate(() => Chat._fechar());
+  await moto.screenshot({ path: "/opt/cursor/artifacts/motoboy-nav-360.png" });
   await moto.screenshot({ path: "/opt/cursor/artifacts/motoboy-nav.png" });
+  const arrasteMoto = await moto.evaluate(() => {
+    const folha = document.querySelector("#telaTrabalho .painel");
+    const antes = folha.getBoundingClientRect().height;
+    const alca = folha.querySelector(".alca");
+    const r = alca.getBoundingClientRect();
+    const ev = (tipo, y) => alca.dispatchEvent(new PointerEvent(tipo, { bubbles: true, cancelable: true, pointerId: 7, pointerType: "mouse", button: 0, clientX: r.left + 30, clientY: y }));
+    ev("pointerdown", r.top + 8);
+    ev("pointermove", r.top - 320);
+    ev("pointerup", r.top - 320);
+    const extra = getComputedStyle(folha.querySelector(".folha-extra")).display;
+    return { antes, depois: Math.round(folha.getBoundingClientRect().height), snap: folha.dataset.snap, extra };
+  });
+  ok(arrasteMoto.depois > arrasteMoto.antes + 40 && arrasteMoto.snap !== "colapsada" && arrasteMoto.extra !== "none", "arrastar a alça abre endereço, chat e Waze (" + arrasteMoto.snap + ")");
+  await moto.setViewport({ width: 800, height: 1280 });
+  await moto.evaluate(() => new Promise(r => setTimeout(r, 300)));
+  await moto.screenshot({ path: "/opt/cursor/artifacts/motoboy-nav-grande.png" });
+  await moto.setViewport({ width: 360, height: 740, isMobile: true, hasTouch: true });
+  await moto.evaluate(() => { folhaIr(document.querySelector("#telaTrabalho .painel"), 0); });
+  await moto.screenshot({ path: "/opt/cursor/artifacts/motoboy-nav-colapsada.png" });
 } finally {
   await browser.close();
 }

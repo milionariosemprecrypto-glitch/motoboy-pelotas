@@ -104,8 +104,10 @@ function instrucaoOsrm(step) {
   const dir = DIR_PT[m.modifier] || "";
   const nome = step && step.name ? step.name : "";
   let base;
-  if (tipo === "depart") base = "Siga " + (dir || "em frente");
-  else if (tipo === "arrive") base = "Você chegou ao destino";
+  // "continue" + modifier uturn virava "Continue em retorno". O retorno tem frase própria.
+  if (tipo === "arrive") base = "Você chegou ao destino";
+  else if (m.modifier === "uturn" || tipo === "uturn") base = "Faça o retorno";
+  else if (tipo === "depart") base = "Siga " + (dir || "em frente");
   else if (tipo === "roundabout" || tipo === "rotary" || tipo === "roundabout turn" || tipo === "exit roundabout") {
     base = m.exit ? "Na rotatória, pegue a " + m.exit + "ª saída" : "Entre na rotatória";
   } else if (tipo === "fork") base = "Na bifurcação, pegue " + (dir || "em frente");
@@ -114,10 +116,10 @@ function instrucaoOsrm(step) {
   else if (tipo === "on ramp") base = "Pegue a rampa" + (dir ? " " + dir : "");
   else if (tipo === "off ramp") base = "Saia na rampa" + (dir ? " " + dir : "");
   else if (tipo === "continue" || tipo === "new name") base = "Continue " + (dir && dir !== "em frente" ? dir : "em frente");
-  else if (m.modifier === "uturn") base = "Faça o retorno";
   else if (!m.modifier || m.modifier === "straight") base = "Siga em frente";
   else base = "Vire " + dir;
-  if (nome && tipo !== "arrive") base += " na " + nome;
+  if (nome && tipo !== "arrive" && !(m.modifier === "uturn" || tipo === "uturn")) base += " na " + nome;
+  else if (nome && (m.modifier === "uturn" || tipo === "uturn")) base += " na " + nome;
   return base;
 }
 
@@ -148,6 +150,13 @@ function interpretarOsrm(j) {
     }
   }
   if (!passos.length) return null;
+  // alongM pelo desenho da rota, não pela soma das distâncias do passo: as duas medidas
+  // divergem e o banner ficava preso na primeira manobra.
+  passos.forEach(p => {
+    const proj = projetarNaLinha(p.lat, p.lng, linha);
+    if (proj) p.alongM = proj.alongM;
+  });
+  passos.sort((a, b) => a.alongM - b.alongM);
   return { linha, passos, metros: rota.distance || along, segundos: rota.duration || 0 };
 }
 
@@ -204,22 +213,32 @@ function textoVoz(instrucao, metros, tipo) {
   return "Em " + d + ", " + instrucao.charAt(0).toLowerCase() + instrucao.slice(1);
 }
 
+// "Em 200 m vire à esquerda na Rua A" — atualizado a cada leitura de GPS.
+function textoManobra(instrucao, metros, tipo) {
+  if (!instrucao) return "";
+  if (tipo === "arrive" || metros < 25) return instrucao;
+  return "Em " + formatarDistancia(metros) + " " + instrucao.charAt(0).toLowerCase() + instrucao.slice(1);
+}
+
 // Próxima manobra e o que falta até o destino, a partir da rota já baixada (sem rede).
 function painelNav(lat, lng) {
   if (!Nav.rota) return null;
   const proj = projetarNaLinha(lat, lng, Nav.rota.linha);
   if (!proj) return null;
   const passos = Nav.rota.passos;
-  let idx = 0;
-  for (let i = 0; i < passos.length; i++) if (passos[i].alongM <= proj.alongM - 15) idx = i;
-  const atual = passos[Math.min(idx + 1, passos.length - 1)];
+  let atual = passos[passos.length - 1];
+  for (let i = 0; i < passos.length; i++) {
+    if (passos[i].tipo === "depart") continue;
+    if (passos[i].alongM >= proj.alongM + 12) { atual = passos[i]; break; }
+  }
   const metrosManobra = Math.max(0, atual.alongM - proj.alongM);
   const restanteM = Math.max(0, (proj.totalM || Nav.rota.metros) - proj.alongM);
   const base = Nav.rota.metros > 1 ? Nav.rota.segundos * (restanteM / Nav.rota.metros) : 0;
   let instrucao = atual.instrucao, seta = atual.seta, nome = atual.nome, tipo = atual.tipo;
   if (tipo === "arrive" && metrosManobra > 40) {
     instrucao = "Siga em frente"; seta = "↑"; tipo = "continue";
-    nome = (passos[idx] && passos[idx].nome) || nome;
+    const anterior = passos.filter(p => p.alongM <= atual.alongM && p.nome).pop();
+    nome = (anterior && anterior.nome) || nome;
   }
   return {
     instrucao, seta, nome, tipo, metrosManobra, restanteM, restanteS: base,

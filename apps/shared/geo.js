@@ -1,11 +1,57 @@
-// Busca de endereços (Photon/OSM) limitada a Pelotas-RS e rota de rua (OSRM).
-// ATENÇÃO: os servidores públicos gratuitos (photon.komoot.io e router.project-osrm.org) têm limite de uso
-// e não garantem disponibilidade. Para produção com muitos usuários, use servidor próprio ou serviço pago.
-const PELOTAS_BBOX = [-52.52, -31.86, -52.18, -31.62]; // oeste, sul, leste, norte (zona urbana + Laranjal)
+// Busca de endereços (Photon/OSM, com Nominatim se o Photon vier vazio) e rota de rua (OSRM).
+// ATENÇÃO: os servidores públicos gratuitos têm limite de uso e não garantem disponibilidade.
+// Nominatim: no máximo 1 consulta por segundo e User-Agent identificando o app (política de uso).
+// BBox do município inteiro (oeste, sul, leste, norte): Centro, Fragata, Areal, Três Vendas, Laranjal e a zona rural.
+const PELOTAS_BBOX = [-52.63, -31.82, -51.99, -31.30];
+const NOMINATIM_INTERVALO_MS = 1100;
+let nominatimLivreEm = 0;
 
 function dentroPelotas(lat, lng) {
   const [o, s, l, n] = PELOTAS_BBOX;
   return lng >= o && lng <= l && lat >= s && lat <= n;
+}
+
+function semAcento(s) {
+  return String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+}
+
+// "Av Brasil" -> "Avenida Brasil". Só troca a palavra inteira (av, r., trav, est, pc, dr, gen, cel…).
+const ABREV_ENDERECO = {
+  av: "Avenida", avenida: "Avenida",
+  r: "Rua", rua: "Rua",
+  trav: "Travessa", tv: "Travessa", travessa: "Travessa",
+  est: "Estrada", estrada: "Estrada",
+  pc: "Praça", pca: "Praça", "pça": "Praça", praca: "Praça", "praça": "Praça",
+  dr: "Doutor", doutor: "Doutor", dra: "Doutora", doutora: "Doutora",
+  gen: "General", general: "General",
+  cel: "Coronel", coronel: "Coronel",
+  mal: "Marechal", marechal: "Marechal",
+  pres: "Presidente", presidente: "Presidente",
+  prof: "Professor", professor: "Professor", profa: "Professora", professora: "Professora",
+  visc: "Visconde", visconde: "Visconde",
+  brg: "Brigadeiro", brigadeiro: "Brigadeiro",
+  cap: "Capitão", capitao: "Capitão", "capitão": "Capitão",
+  ten: "Tenente", tenente: "Tenente",
+  alm: "Alameda", alameda: "Alameda",
+  rod: "Rodovia", rodovia: "Rodovia",
+  bc: "Beco", beco: "Beco",
+  lg: "Largo", largo: "Largo"
+};
+
+function expandirAbrev(texto) {
+  return String(texto || "").trim().replace(/\s+/g, " ").split(" ").filter(Boolean).map(p => {
+    const chave = semAcento(p).replace(/\.$/, "");
+    return ABREV_ENDERECO[chave] || p;
+  }).join(" ");
+}
+
+function consultasEndereco(texto) {
+  const bruto = String(texto || "").trim().replace(/\s+/g, " ");
+  const cheio = expandirAbrev(bruto);
+  const sem = semAcento(cheio);
+  const lista = [];
+  [cheio, sem, bruto].forEach(q => { if (q && lista.indexOf(q) < 0) lista.push(q); });
+  return lista;
 }
 
 function nomeEndereco(p) {
@@ -14,15 +60,100 @@ function nomeEndereco(p) {
   return [rua || p.name, p.district || p.locality].filter(Boolean).join(" · ");
 }
 
-async function buscarEnderecos(texto) {
-  const url = "https://photon.komoot.io/api/?limit=6&bbox=" + PELOTAS_BBOX.join(",") +
-    "&lat=" + PELOTAS[0] + "&lon=" + PELOTAS[1] + "&q=" + encodeURIComponent(texto + " Pelotas");
-  const r = await fetch(url);
-  if (!r.ok) throw new Error("Busca de endereço indisponível");
-  const j = await r.json();
-  return j.features
-    .map(f => ({ nome: nomeEndereco(f.properties), lat: f.geometry.coordinates[1], lng: f.geometry.coordinates[0] }))
-    .filter(e => e.nome && dentroPelotas(e.lat, e.lng));
+function cidadePelotas(p) {
+  const c = semAcento((p && (p.city || p.town || p.county || (p.address && (p.address.city || p.address.town)))) || "");
+  if (!c) return true;
+  return c.indexOf("pelotas") >= 0;
+}
+
+function deduplicarEnderecos(lista) {
+  const vistos = {};
+  return lista.filter(e => {
+    const chave = semAcento(e.nome) + "|" + e.lat.toFixed(4) + "|" + e.lng.toFixed(4);
+    if (vistos[chave]) return false;
+    vistos[chave] = true;
+    return true;
+  });
+}
+
+function ordenarEnderecos(lista, consulta) {
+  const q = semAcento(expandirAbrev(consulta));
+  const tokens = q.split(" ").filter(t => t.length > 2);
+  const centro = (typeof PELOTAS !== "undefined" && PELOTAS) || [-31.765, -52.342];
+  return lista.slice().sort((a, b) => pontuar(b) - pontuar(a));
+  function pontuar(e) {
+    const n = semAcento(e.nome);
+    let s = 0;
+    if (q && n.indexOf(q) >= 0) s += 80;
+    tokens.forEach(t => { if (n.indexOf(t) >= 0) s += 12; });
+    const dLat = (e.lat - centro[0]) * 111000, dLng = (e.lng - centro[1]) * 111000 * Math.cos(centro[0] * Math.PI / 180);
+    return s - Math.hypot(dLat, dLng) / 800;
+  }
+}
+
+async function photonEnderecos(q, buscar, comBbox) {
+  const centro = (typeof PELOTAS !== "undefined" && PELOTAS) || [-31.765, -52.342];
+  let url = "https://photon.komoot.io/api/?limit=8&lang=default&lat=" + centro[0] + "&lon=" + centro[1] +
+    "&q=" + encodeURIComponent(q);
+  if (comBbox) url += "&bbox=" + PELOTAS_BBOX.join(",");
+  const r = await buscar(url);
+  if (!r || !r.ok) return [];
+  const j = typeof r.json === "function" ? await r.json() : r;
+  return ((j && j.features) || []).map(f => {
+    const p = f.properties || {};
+    const c = (f.geometry && f.geometry.coordinates) || [];
+    return { nome: nomeEndereco(p), lat: c[1], lng: c[0], cidadeOk: cidadePelotas(p) };
+  }).filter(e => e.nome && e.lat != null && dentroPelotas(e.lat, e.lng) && e.cidadeOk);
+}
+
+async function nominatimEnderecos(q, buscar) {
+  const agora = Date.now();
+  const espera = nominatimLivreEm - agora;
+  if (espera > 0) await new Promise(res => setTimeout(res, espera));
+  nominatimLivreEm = Date.now() + NOMINATIM_INTERVALO_MS;
+  const [o, s, l, n] = PELOTAS_BBOX;
+  const url = "https://nominatim.openstreetmap.org/search?" +
+    "format=jsonv2&addressdetails=1&limit=6&countrycodes=br&bounded=0" +
+    "&viewbox=" + [o, n, l, s].join(",") +
+    "&q=" + encodeURIComponent(q + ", Pelotas, Rio Grande do Sul, Brasil");
+  const r = await buscar(url, {
+    headers: {
+      "Accept": "application/json",
+      "User-Agent": "E-Ja/1.2 (entrega em Pelotas; +https://eja-site.pages.dev)"
+    }
+  });
+  if (!r || !r.ok) return [];
+  const j = typeof r.json === "function" ? await r.json() : r;
+  return (j || []).map(item => ({
+    nome: nomeEndereco({
+      name: item.name || (item.address && (item.address.road || item.address.pedestrian)) || "",
+      street: item.address && item.address.road,
+      district: item.address && (item.address.suburb || item.address.neighbourhood),
+      locality: "Pelotas"
+    }) || item.display_name,
+    lat: Number(item.lat), lng: Number(item.lon), cidadeOk: cidadePelotas(item)
+  })).filter(e => e.nome && dentroPelotas(e.lat, e.lng) && e.cidadeOk);
+}
+
+// Não cola "Pelotas" na consulta do Photon: "Av Brasil Pelotas" passa a achar o aeroporto
+// e some com a Avenida Brasil. O recorte é o bbox + a preferência pelo centro da cidade.
+async function buscarEnderecos(texto, buscar) {
+  buscar = buscar || (typeof fetch === "function" ? fetch : null);
+  if (!buscar) return [];
+  const consultas = consultasEndereco(texto);
+  if (!consultas.length) return [];
+  let achados = [];
+  for (const q of consultas) {
+    try { achados = await photonEnderecos(q, buscar, true); } catch (e) { achados = []; }
+    if (!achados.length) {
+      try { achados = await photonEnderecos(q, buscar, false); } catch (e) { achados = []; }
+    }
+    if (achados.length) break;
+  }
+  if (!achados.length) {
+    try { achados = await nominatimEnderecos(consultas[0], buscar); } catch (e) { achados = []; }
+  }
+  return ordenarEnderecos(deduplicarEnderecos(achados), texto).slice(0, 6);
 }
 
 // Retorna { km, linha: [[lat,lng],...] } ou null se o OSRM falhar (o servidor então usa estimativa).
@@ -39,28 +170,43 @@ async function calcularRota(a, b) {
 }
 
 // Liga um <input> a uma lista de sugestões. aoEscolher({nome, lat, lng}).
-function autocompletar(input, lista, aoEscolher) {
+// aoMarcarMapa(texto) abre o mapa quando a busca não acha nada.
+function autocompletar(input, lista, aoEscolher, aoMarcarMapa) {
   let timer = null, seq = 0;
   input.addEventListener("input", () => {
     clearTimeout(timer);
     input.dataset.escolhido = "";
     const t = input.value.trim();
     if (t.length < 3) { lista.innerHTML = ""; return; }
-    timer = setTimeout(async () => {          // espera parar de digitar (respeita limite do Photon)
+    timer = setTimeout(async () => {
       const minha = ++seq;
       let res = [];
-      try { res = await buscarEnderecos(t); } catch {}
+      try { res = await buscarEnderecos(t); } catch (e) { res = []; }
       if (minha !== seq) return;
       lista.innerHTML = "";
       res.forEach(e => {
-        const item = document.createElement("div");
+        const item = document.createElement("button");
+        item.type = "button";
         item.className = "sugestao";
         item.textContent = e.nome;
         item.onclick = () => { input.value = e.nome; input.dataset.escolhido = "1"; lista.innerHTML = ""; aoEscolher(e); };
         lista.append(item);
       });
-      if (!res.length) lista.innerHTML = '<div class="sugestao-vazia small" style="padding:12px">Nenhum endereço em Pelotas encontrado</div>';
-    }, 450);
+      if (!res.length) {
+        const vazio = document.createElement("div");
+        vazio.className = "sugestao-vazia small";
+        vazio.textContent = "Nenhum endereço encontrado em Pelotas.";
+        lista.append(vazio);
+        if (aoMarcarMapa) {
+          const marcar = document.createElement("button");
+          marcar.type = "button";
+          marcar.className = "sugestao sugestao-mapa";
+          marcar.textContent = "Usar este endereço e marcar no mapa";
+          marcar.onclick = () => { lista.innerHTML = ""; aoMarcarMapa(t); };
+          lista.append(marcar);
+        }
+      }
+    }, 400);
   });
 }
 

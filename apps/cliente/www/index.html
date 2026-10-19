@@ -153,63 +153,78 @@
     <div class="chips">
       <button class="chip" onclick="usarLugar('casa')">🏠 Casa</button>
       <button class="chip" onclick="usarLugar('trabalho')">💼 Trabalho</button>
-      <button class="chip" onclick="abrirPinoMapa()">📍 Escolher no mapa</button>
+      <button class="chip" onclick="abrirPinoMapa('destino')">📍 Escolher no mapa</button>
     </div>
     <div id="listaRecentes" class="lista"></div>
   </section>
 
   <!-- ===== Escolher no mapa (pino) ===== -->
-  <section id="telaPino" class="tela sobre hidden">
+  <section id="telaPino" class="tela sobre mapa-tela hidden">
     <div id="mapaPino" class="mapa-cheio"></div>
     <div class="pino-central"><i></i></div>
-    <button class="fab-voltar" onclick="fecharPino()">←</button>
-    <div class="folha">
+    <div class="busca-flutuante">
+      <button class="voltar" type="button" onclick="fecharPino()">←</button>
+      <div class="campo">
+        <input id="buscaPino" placeholder="Buscar endereço em Pelotas" autocomplete="off" aria-label="Buscar endereço no mapa">
+        <div id="sugPino" class="sugestoes"></div>
+      </div>
+    </div>
+    <div class="folha" id="folhaPino">
       <div class="alca"></div>
-      <h2 class="centro">Insira seu destino</h2>
-      <p class="small centro">Arraste o mapa para mover o marcador</p>
-      <div class="campo-falso" id="pinoNome">Para onde?</div>
-      <button class="btn-preto" onclick="confirmarPino()">Confirmar destino</button>
+      <div class="folha-miolo">
+        <h2 class="centro">Marque no mapa</h2>
+        <p class="small centro">Arraste o mapa para mover o marcador</p>
+        <div class="campo-falso" id="pinoNome">Para onde?</div>
+        <button class="btn-preto" type="button" onclick="confirmarPino()">Confirmar este ponto</button>
+      </div>
     </div>
   </section>
 
   <!-- ===== Confirmar (preço antes) ===== -->
-  <section id="telaConfirmar" class="tela sobre hidden">
+  <section id="telaConfirmar" class="tela sobre mapa-tela hidden">
     <div id="mapa" class="mapa-cheio mapa-meio"></div>
-    <button class="fab-voltar" onclick="voltarDoConfirmar()">←</button>
+    <button class="fab-voltar" type="button" onclick="voltarDoConfirmar()">←</button>
     <form id="deliveryForm" class="folha">
       <div class="alca"></div>
-      <div class="rota-resumo"><div><i class="t-a"></i><span id="resOrigem"></span></div><div><i class="t-b"></i><span id="resDestino"></span></div></div>
-      <label for="tipo">O que será entregue?</label>
-      <select id="tipo"></select>
-      <div class="opcao-preco">
-        <div class="op-icone">🛵</div>
-        <div class="op-txt"><b>É-Já Moto · <span id="tagCategoria">Entrega rápida</span></b><span id="km">Calculando…</span></div>
-        <strong id="valor">—</strong>
+      <div class="folha-miolo">
+        <div class="rota-resumo"><div><i class="t-a"></i><span id="resOrigem"></span></div><div><i class="t-b"></i><span id="resDestino"></span></div></div>
+        <label for="tipo">O que será entregue?</label>
+        <select id="tipo"></select>
+        <div class="opcao-preco">
+          <div class="op-icone">🛵</div>
+          <div class="op-txt"><b>É-Já Moto · <span id="tagCategoria">Entrega rápida</span></b><span id="km">Calculando…</span></div>
+          <strong id="valor">—</strong>
+        </div>
+        <p class="small">Preço calculado antes de confirmar. Pagamento direto ao motoboy.</p>
+        <button id="btnConfirmar" class="btn-preto" type="submit">Confirmar entrega</button>
       </div>
-      <p class="small">Preço calculado antes de confirmar. Pagamento direto ao motoboy.</p>
-      <button id="btnConfirmar" class="btn-preto" type="submit">Confirmar entrega</button>
     </form>
   </section>
 
   <!-- ===== Pedido em andamento ===== -->
-  <section id="pedido" class="tela sobre hidden" aria-live="polite">
+  <section id="pedido" class="tela sobre mapa-tela hidden" aria-live="polite">
     <div id="mapaPedido" class="mapa-cheio mapa-meio"></div>
-    <button class="fab-voltar" onclick="sairDoPedido()">←</button>
-    <div class="folha">
+    <button class="fab-voltar" type="button" onclick="sairDoPedido()">←</button>
+    <button class="fab-mapa" type="button" onclick="verRotaPedido()" aria-label="Ver coleta, entrega e motoboy">⌖</button>
+    <div class="folha" id="folhaPedido">
       <div class="alca"></div>
-      <div id="estado" class="estado-titulo">Procurando um motoboy disponível…</div>
-      <div id="barraBuscaCli" class="barra-busca"><i></i></div>
-      <div id="codigoBox" class="codigo-box hidden">Código para o destinatário <b id="codigoTxt"></b></div>
-      <div id="resumo" class="small"></div>
-      <button id="btnChat" class="btn-claro hidden" type="button" onclick="Chat.alternar()">Conversar <span id="chatBadge" class="chat-badge hidden">0</span></button>
-      <button id="btnWhats" class="btn-whats" onclick="compartilharWhats()">Compartilhar rastreio no WhatsApp</button>
-      <div id="avaliar" class="avaliar hidden">
-        <b>Como foi a entrega?</b>
-        <div class="estrelas" id="estrelas"></div>
-        <div id="avaliarMsg" class="small"></div>
+      <div class="folha-miolo">
+        <div id="estado" class="estado-titulo">Procurando um motoboy disponível…</div>
+        <div id="barraBuscaCli" class="barra-busca"><i></i></div>
+        <div id="codigoBox" class="codigo-box hidden">Código para o destinatário <b id="codigoTxt"></b></div>
+        <div id="resumo" class="small"></div>
+        <div class="folha-extra">
+          <button id="btnChat" class="btn-claro hidden" type="button" onclick="Chat.alternar()">Conversar <span id="chatBadge" class="chat-badge hidden">0</span></button>
+          <button id="btnWhats" class="btn-whats" type="button" onclick="compartilharWhats()">Compartilhar rastreio no WhatsApp</button>
+          <div id="avaliar" class="avaliar hidden">
+            <b>Como foi a entrega?</b>
+            <div class="estrelas" id="estrelas"></div>
+            <div id="avaliarMsg" class="small"></div>
+          </div>
+          <button id="btnCancelar" class="btn-claro" type="button" onclick="cancelarPedido()">Cancelar pedido</button>
+          <button id="btnNovo" class="btn-preto hidden" type="button" onclick="novoPedido()">Fazer outro pedido</button>
+        </div>
       </div>
-      <button id="btnCancelar" class="btn-claro" onclick="cancelarPedido()">Cancelar pedido</button>
-      <button id="btnNovo" class="btn-preto hidden" onclick="novoPedido()">Fazer outro pedido</button>
     </div>
   </section>
 

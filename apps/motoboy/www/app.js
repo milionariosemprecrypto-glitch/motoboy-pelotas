@@ -75,7 +75,9 @@ function motoAba(a) {
   show("motoInicio", a === "inicio"); show("motoGanhos", a === "ganhos");
   $("segInicio").classList.toggle("active", a === "inicio");
   $("segGanhos").classList.toggle("active", a === "ganhos");
-  if (a === "ganhos") carregarGanhos(); else setTimeout(() => mapa && mapa.invalidateSize(), 60);
+  const folha = document.querySelector("#telaTrabalho .painel");
+  if (a === "ganhos") { carregarGanhos(); folhaIr(folha, 2); }
+  else { folhaIr(folha, 0); setTimeout(() => mapa && ajustarMapa(mapa), 80); }
   atualizarBarra();
 }
 
@@ -83,6 +85,7 @@ function iniciarMapa() {
   if (mapa) return;
   document.body.classList.add("modo-mapa");
   mapa = criarMapa("mapa");
+  ligarFolha(document.querySelector("#telaTrabalho .painel"), { inicial: 0 });
   if ($("navVoz")) $("navVoz").textContent = vozLigada ? "Voz on" : "Voz off";
   mapa.on("dragstart", () => { if (ocupado) seguirMoto = false; });
   if (!navigator.geolocation) return;
@@ -238,7 +241,7 @@ function renderNav(lat, lng) {
     return;
   }
   $("navSeta").textContent = p.seta;
-  $("navInstrucao").textContent = (p.metrosManobra >= 30 ? formatarDistancia(p.metrosManobra) + " · " : "") + p.instrucao;
+  $("navInstrucao").textContent = textoManobra(p.instrucao, p.metrosManobra, p.tipo);
   $("navRua").textContent = p.fora ? "Você saiu da rota. Recalculando…" : (p.nome || "");
   $("navDist").textContent = formatarDistancia(p.restanteM);
   $("navTempo").textContent = formatarDuracao(p.restanteS);
@@ -306,6 +309,7 @@ function abrirNavegacao(app) {
 function mostrarCorrida() {
   const c = corrida, coletando = c.status === "aceito";
   seguirMoto = true;
+  document.body.classList.add("em-corrida");
   if (mapa && ultimaPos) mapa.setView(ultimaPos, 17);
   desenharAlvo();
   if (ultimaPos) aoPosicao(ultimaPos[0], ultimaPos[1], Nav.ultimoRumo, 1);
@@ -318,6 +322,7 @@ function mostrarCorrida() {
   show("codigoLabel", !coletando); show("codigoEntrega", !coletando);
   $("corridaBtn").textContent = coletando ? "Já coletei o item" : "Concluir entrega";
   $("motoStatus").textContent = coletando ? "Corrida aceita. Siga até o local de retirada." : "Item coletado. Siga até o destino.";
+  folhaIr(document.querySelector("#telaTrabalho .painel"), 0);
   atualizarBarra();
   sincronizarChatMoto();
 }

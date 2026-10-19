@@ -43,8 +43,8 @@ async function carregar(u) {
   db.from("profiles").select("nome").eq("id", u.id).maybeSingle().then(({ data }) => { if (data && data.nome) $("contaNome").textContent = data.nome; });
   montarServicos(); irAba("home"); atualizarLocal(false);
   iniciarPush("cliente", () => atualizarStatus());
-  autocompletar($("origem"), $("sugOrigem"), e => definirLado("origem", e));
-  autocompletar($("destino"), $("sugDestino"), e => definirLado("destino", e));
+  autocompletar($("origem"), $("sugOrigem"), e => definirLado("origem", e), t => marcarNoMapa("origem", t));
+  autocompletar($("destino"), $("sugDestino"), e => definirLado("destino", e), t => marcarNoMapa("destino", t));
   $("origem").addEventListener("input", () => { if ($("origem").dataset.escolhido !== "1") limparDetalhe("origem"); });
   $("destino").addEventListener("input", () => { if ($("destino").dataset.escolhido !== "1") limparDetalhe("destino"); });
   ligarSn("origem"); ligarSn("destino");
@@ -225,31 +225,95 @@ function continuarPlano() {
 }
 
 // ---------- Escolher no mapa (pino arrastável) ----------
-function abrirPinoMapa() {
+let pinoLado = "destino", pinoTextoFixo = "", pinoAtual = null, pinoBuscaLigada = false;
+function marcarNoMapa(lado, texto) { abrirPinoMapa(lado, texto); }
+function abrirPinoMapa(lado, texto) {
+  pinoLado = lado === "origem" ? "origem" : "destino";
+  pinoTextoFixo = texto || "";
   telaSobre("telaPino", true);
-  if (!mapaPino) { mapaPino = criarMapa("mapaPino"); mapaPino.on("moveend", nomearPino); }
-  setTimeout(() => { mapaPino.invalidateSize(); const c = destino || aqui; mapaPino.setView(c ? [c.lat, c.lng] : PELOTAS, 16); }, 80);
+  if (!mapaPino) {
+    mapaPino = criarMapa("mapaPino");
+    mapaPino.on("moveend", nomearPino);
+  }
+  if (!pinoBuscaLigada) {
+    pinoBuscaLigada = true;
+    autocompletar($("buscaPino"), $("sugPino"), e => {
+      pinoTextoFixo = "";
+      pinoAtual = { lat: e.lat, lng: e.lng, nome: e.nome };
+      $("pinoNome").textContent = e.nome;
+      $("buscaPino").value = e.nome;
+      mapaPino.setView([e.lat, e.lng], 17);
+    }, t => { pinoTextoFixo = t; $("buscaPino").value = t; nomearPino(); });
+  }
+  $("buscaPino").value = pinoTextoFixo;
+  const titulo = $("folhaPino").querySelector("h2");
+  if (titulo) titulo.textContent = pinoLado === "origem" ? "Marque a retirada" : "Marque o destino";
+  setTimeout(() => {
+    ajustarMapa(mapaPino);
+    folhaIr($("folhaPino"), 1);
+    const c = (pinoLado === "origem" ? origem : destino) || aqui;
+    mapaPino.setView(c ? [c.lat, c.lng] : PELOTAS, 16);
+    nomearPino();
+  }, 80);
 }
-let pinoAtual = null;
+function pontoDoPino() {
+  const el = mapaPino.getContainer();
+  const w = el.clientWidth || window.innerWidth;
+  const h = el.clientHeight || window.innerHeight;
+  const folha = $("folhaPino");
+  const fh = folha ? (parseFloat(folha.style.height) || folha.getBoundingClientRect().height) : h * 0.4;
+  const y = Math.max(72, (h - fh) / 2);
+  const pin = document.querySelector("#telaPino .pino-central");
+  if (pin) pin.style.top = y + "px";
+  return mapaPino.containerPointToLatLng([w / 2, y]);
+}
 async function nomearPino() {
-  const c = mapaPino.getCenter(); pinoAtual = { lat: c.lat, lng: c.lng, nome: null };
+  if (!mapaPino) return;
+  const c = pontoDoPino();
+  if (pinoTextoFixo) {
+    pinoAtual = { lat: c.lat, lng: c.lng, nome: pinoTextoFixo };
+    $("pinoNome").textContent = pinoTextoFixo;
+    return;
+  }
+  pinoAtual = { lat: c.lat, lng: c.lng, nome: null };
   $("pinoNome").textContent = "Buscando endereço…";
-  const n = await nomeDoPonto(c.lat, c.lng); pinoAtual.nome = n || "Ponto no mapa";
+  const n = await nomeDoPonto(c.lat, c.lng);
+  if (!pinoAtual || pinoAtual.lat !== c.lat) return;
+  pinoAtual.nome = n || "Ponto no mapa";
   $("pinoNome").textContent = pinoAtual.nome;
 }
 function fecharPino() { telaSobre("telaPino", false); }
 function confirmarPino() {
   if (!pinoAtual || !pinoAtual.nome) return;
   if (!dentroPelotas(pinoAtual.lat, pinoAtual.lng)) return toast("Por enquanto atendemos só Pelotas.");
-  fecharPino(); escolherDestino(pinoAtual);
+  const ponto = { nome: pinoAtual.nome, lat: pinoAtual.lat, lng: pinoAtual.lng };
+  const lado = pinoLado;
+  pinoTextoFixo = "";
+  fecharPino();
+  if (lado === "origem") definirLado("origem", ponto);
+  else escolherDestino(ponto);
 }
 
-// Enquadra pontos no pedaço do mapa que fica visível acima da folha inferior.
+// Enquadra pontos na faixa do mapa que fica acima da folha. O padding de baixo
+// nunca passa de metade da tela: uma folha alta empurrava o ponto A para fora.
+function alturaFolha(sel) {
+  const f = sel ? document.querySelector(sel) : null;
+  if (!f) return Math.round((window.innerHeight || 700) * 0.34);
+  return parseFloat(f.style.height) || f.getBoundingClientRect().height || Math.round((window.innerHeight || 700) * 0.34);
+}
 function enquadrar(m, pts, folhaSel) {
+  if (!m || !pts || !pts.length) return;
   ajustarMapa(m);
-  const f = document.querySelector(folhaSel); const h = f ? f.getBoundingClientRect().height : 300;
-  m.fitBounds(L.latLngBounds(pts), { paddingTopLeft: [50, 90], paddingBottomRight: [50, h + 40], maxZoom: 16 });
-  setTimeout(() => ajustarMapa(m), 300);
+  const vh = window.innerHeight || 700, vw = window.innerWidth || 360;
+  let h = Math.min(alturaFolha(folhaSel), Math.round(vh * 0.5));
+  if (h < 80) h = Math.round(vh * 0.34);
+  const top = Math.min(120, Math.round(vh * 0.14));
+  const lado = Math.min(48, Math.round(vw * 0.08));
+  try {
+    if (pts.length === 1) m.setView(pts[0], 15);
+    else m.fitBounds(L.latLngBounds(pts), { paddingTopLeft: [lado, top], paddingBottomRight: [lado, h + 16], maxZoom: 16 });
+  } catch (e) {}
+  setTimeout(() => ajustarMapa(m), 280);
 }
 
 // ---------- Confirmar com preço ----------
@@ -260,6 +324,7 @@ async function abrirConfirmar() {
   $("tagCategoria").textContent = categoria.nome;
   $("tipo").innerHTML = ""; categoria.itens.filter(i => !/NÃO/.test(i)).forEach(i => $("tipo").add(new Option(i, categoria.nome + ": " + i)));
   if (!mapa) mapa = criarMapa("mapa");
+  folhaIr($("deliveryForm"), 1);
   await new Promise(r => setTimeout(r, 120));
   camadas.forEach(c => c.remove());
   camadas = [L.marker([origem.lat, origem.lng], { icon: icone.retirada() }).addTo(mapa), L.marker([destino.lat, destino.lng], { icon: icone.entrega() }).addTo(mapa)];
@@ -296,12 +361,30 @@ $("deliveryForm").addEventListener("submit", async ev => {
 });
 
 // ---------- Pedido em andamento ----------
+let seguirPedido = true;
+function pontosDoPedido() {
+  const pts = [];
+  if (!pedido) return pts;
+  if (pedido.ret_lat != null && pedido.ret_lng != null) pts.push([+pedido.ret_lat, +pedido.ret_lng]);
+  if (pedido.ent_lat != null && pedido.ent_lng != null) pts.push([+pedido.ent_lat, +pedido.ent_lng]);
+  if (pedido.motoPos) pts.push(pedido.motoPos);
+  return pts;
+}
+function enquadrarPedido() {
+  const pts = pontosDoPedido();
+  if (mapaPed && pts.length) enquadrar(mapaPed, pts, "#folhaPedido");
+}
+function verRotaPedido() { seguirPedido = true; enquadrarPedido(); }
+
 async function mostrarPedido(p) {
-  pedido = p; ultimoS = null;
+  pedido = p; ultimoS = null; seguirPedido = true;
   telaSobre("pedido", true); show("btnCancelar", true); show("btnNovo", false); show("avaliar", false); show("btnWhats", true);
   $("resumo").textContent = textoEndereco(p.retirada, p.ret_numero, p.ret_complemento) + " → " +
     textoEndereco(p.entrega, p.ent_numero, p.ent_complemento) + " · " + p.item + " · " + money(p.preco);
-  if (!mapaPed) mapaPed = criarMapa("mapaPedido"); else setTimeout(() => mapaPed.invalidateSize(), 60);
+  if (!mapaPed) {
+    mapaPed = criarMapa("mapaPedido");
+    mapaPed.on("dragstart", () => { seguirPedido = false; });
+  } else setTimeout(() => ajustarMapa(mapaPed), 60);
   if (p.ret_lat == null) {
     const { data } = await db.from("pedidos").select("ret_lat,ret_lng,ent_lat,ent_lng,ret_numero,ret_complemento,ent_numero,ent_complemento").eq("id", p.id).single();
     Object.assign(p, data || {});
@@ -309,8 +392,14 @@ async function mostrarPedido(p) {
       textoEndereco(p.entrega, p.ent_numero, p.ent_complemento) + " · " + p.item + " · " + money(p.preco);
   }
   camadasPed.forEach(c => c.remove());
-  camadasPed = [L.marker([p.ret_lat, p.ret_lng], { icon: icone.retirada() }).addTo(mapaPed), L.marker([p.ent_lat, p.ent_lng], { icon: icone.entrega() }).addTo(mapaPed)];
-  setTimeout(() => enquadrar(mapaPed, [[p.ret_lat, p.ret_lng], [p.ent_lat, p.ent_lng]], "#pedido .folha"), 150);
+  camadasPed = [];
+  if (p.ret_lat != null && p.ent_lat != null) {
+    camadasPed.push(L.polyline([[p.ret_lat, p.ret_lng], [p.ent_lat, p.ent_lng]], { color: "#111", weight: 4, opacity: .45, dashArray: "7 8" }).addTo(mapaPed));
+    camadasPed.push(L.marker([p.ret_lat, p.ret_lng], { icon: icone.retirada() }).addTo(mapaPed));
+    camadasPed.push(L.marker([p.ent_lat, p.ent_lng], { icon: icone.entrega() }).addTo(mapaPed));
+  }
+  folhaIr($("folhaPedido"), 0);
+  setTimeout(enquadrarPedido, 160);
   atualizarStatus();
   if (canal) db.removeChannel(canal);
   canal = db.channel("pedido-" + p.id)
@@ -320,10 +409,14 @@ async function mostrarPedido(p) {
   sincronizarChatCliente();
 }
 function moverMoto(lat, lng) {
-  if (!mapaPed) return;
-  pedido.motoPos = [lat, lng];
-  if (!motoMarker) motoMarker = L.marker([lat, lng], { icon: icone.moto(), zIndexOffset: 1000 }).addTo(mapaPed);
-  else motoMarker.setLatLng([lat, lng]);
+  if (!mapaPed || lat == null || lng == null) return;
+  const primeiro = !pedido.motoPos;
+  pedido.motoPos = [+lat, +lng];
+  if (!motoMarker) motoMarker = L.marker(pedido.motoPos, { icon: icone.moto(), zIndexOffset: 1000 }).addTo(mapaPed);
+  else motoMarker.setLatLng(pedido.motoPos);
+  let fora = false;
+  try { fora = !mapaPed.getBounds().pad(-0.05).contains(pedido.motoPos); } catch (e) { fora = true; }
+  if (seguirPedido && (primeiro || fora)) enquadrarPedido();
 }
 let ultimoS = null;
 async function atualizarStatus() {
@@ -341,6 +434,7 @@ async function atualizarStatus() {
   $("estado").textContent = textos[s.status] || s.status;
   show("barraBuscaCli", s.status === "procurando");
   show("codigoBox", ["aceito", "coletado"].includes(s.status)); $("codigoTxt").textContent = pedido.codigo || "";
+  if ($("folhaPedido") && $("folhaPedido").dataset.snap === "colapsada") folhaIr($("folhaPedido"), 0);
   if (s.status === "aceito" && ultimoS && ultimoS !== "aceito") Alerta.tocarAceito();
   ultimoS = s.status;
   if (s.status === "aceito" || s.status === "coletado") {
@@ -423,3 +517,17 @@ async function carregarHistorico() {
 }
 
 setInterval(atualizarStatus, 10000);
+
+ligarFolha($("folhaPino"), { inicial: 1 });
+ligarFolha($("deliveryForm"), { inicial: 1 });
+ligarFolha($("folhaPedido"), { inicial: 0 });
+window.addEventListener("eja-folha", ev => {
+  const f = ev.detail && ev.detail.folha;
+  if (!f) return;
+  if (f.id === "folhaPedido" && pedido && mapaPed) enquadrarPedido();
+  if (f.id === "folhaPino" && mapaPino && !$("telaPino").classList.contains("hidden")) nomearPino();
+  if (f.id === "deliveryForm" && mapa && origem && destino) {
+    const pts = rota && rota.linha ? rota.linha : [[origem.lat, origem.lng], [destino.lat, destino.lng]];
+    enquadrar(mapa, pts, "#deliveryForm");
+  }
+});

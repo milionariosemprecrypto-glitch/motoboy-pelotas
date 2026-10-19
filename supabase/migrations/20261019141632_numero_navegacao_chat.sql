@@ -1,6 +1,6 @@
 -- Número/complemento do endereço, chat da corrida e limpeza dessas mensagens.
--- NÃO aplicar em produção por este repositório: rode este arquivo no SQL Editor
--- (ou `supabase db push`) só quando for publicar o app. Pode ser executado de novo.
+-- Já aplicada em produção. Pode ser executada de novo: o final revoga EXECUTE
+-- de public/anon nas funções recriadas e fixa search_path nas normalizações.
 
 -- ===== 1. Número e complemento (pedidos antigos ficam com NULL) =====
 alter table public.pedidos
@@ -23,8 +23,11 @@ alter table public.pedidos add constraint pedidos_ent_complemento_check
   check (ent_complemento is null or char_length(ent_complemento) <= 80);
 
 -- Usadas só por criar_pedido (security definer). Sem EXECUTE para a API.
+-- search_path fixo: sem isso o advisor marca a função e um search_path da sessão muda o comportamento.
 create or replace function public.normalizar_numero(p text) returns text
-language plpgsql immutable as $$
+language plpgsql immutable
+set search_path = public
+as $$
 declare t text := trim(coalesce(p, ''));
 begin
   if t = '' then return null; end if;
@@ -36,7 +39,9 @@ begin
 end $$;
 
 create or replace function public.normalizar_complemento(p text) returns text
-language plpgsql immutable as $$
+language plpgsql immutable
+set search_path = public
+as $$
 declare t text := nullif(trim(coalesce(p, '')), '');
 begin
   if t is null then return null; end if;
@@ -296,6 +301,17 @@ begin
 end $$;
 
 -- ===== 4. Permissões =====
+-- CREATE OR REPLACE devolve EXECUTE para public (e portanto anon) neste projeto.
+-- Foi o que aconteceu ao aplicar em produção; o bloco abaixo é o mesmo ajuste feito no banco.
+revoke execute on function public.criar_pedido(text, text, text, double precision, double precision, double precision, double precision, numeric, text, text, text, text) from public, anon;
+revoke execute on function public.meu_pedido_ativo() from public, anon;
+revoke execute on function public.meus_pedidos() from public, anon;
+revoke execute on function public.pedidos_abertos() from public, anon;
+revoke execute on function public.minha_corrida() from public, anon;
+revoke execute on function public.admin_pedidos() from public, anon;
+alter function public.normalizar_numero(text) set search_path = public;
+alter function public.normalizar_complemento(text) set search_path = public;
+
 revoke all on function public.normalizar_numero(text) from public, anon, authenticated;
 revoke all on function public.normalizar_complemento(text) from public, anon, authenticated;
 revoke all on function public.mensagens_antes_insert() from public, anon, authenticated;

@@ -40,11 +40,11 @@ aceita a rota só se estiver entre 1,0× e 2,5× a linha reta; senão usa linha 
 
 ## Notificações push (Firebase) — ver `docs/FIREBASE.md`
 
-## Número, navegação e chat (migration ainda NÃO aplicada em produção)
+## Número, navegação e chat (migration já aplicada em produção)
 
 O arquivo `supabase/migrations/20261019141632_numero_navegacao_chat.sql` acrescenta o número e o complemento do endereço, a tabela `mensagens` (chat da corrida, com RLS) e inclui essas mensagens na anonimização da conta e na rotina diária `eja_limpar_gps` (90 dias).
 
-**Não rode isso no banco de produção até publicar o app.** Quando for a hora, no SQL Editor do projeto É-Já (ou com a CLI, na sua máquina):
+Ela já rodou no projeto É-Já. Recriar as funções devolve `EXECUTE` para `public`/`anon`; o final do arquivo revoga isso e deixa só `authenticated`, e fixa `search_path = public` em `normalizar_numero` e `normalizar_complemento` (o mesmo ajuste feito no banco depois da primeira aplicação). Não é preciso rodar de novo. Se um ambiente novo for criado pela CLI:
 
 ```sh
 # opção A — SQL Editor: cole o arquivo inteiro e execute uma vez

@@ -117,17 +117,13 @@
     <button id="navConta" onclick="irAba('conta')"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-4 4.5-6 8-6s7 2 8 6"/></svg>Conta</button>
   </nav>
 
-  <!-- ===== Planejar (origem/destino) ===== -->
-  <section id="telaPlano" class="tela sobre hidden">
+  <!-- ===== Planejar (origem em cima, Para onde? embaixo) ===== -->
+  <section id="telaPlano" class="tela sobre hidden" data-foco="destino">
     <div class="plano-topo">
       <button class="voltar" onclick="fecharPlano()">←</button>
       <h2>Planeje sua entrega</h2>
     </div>
     <div class="plano-rolagem">
-    <div class="chips">
-      <button class="chip" onclick="maisTarde()">🕒 Ir agora ▾</button>
-      <button class="chip" id="chipCategoria" onclick="irAba('opcoes'); fecharPlano()">📦 <span id="categoriaAtual">Entrega rápida</span> ▾</button>
-    </div>
     <div class="caixa-rota">
       <div class="trilho"><i class="t-a"></i><i class="t-linha"></i><i class="t-b"></i></div>
       <div class="campos">
@@ -136,42 +132,36 @@
             <input id="origem" placeholder="Endereço de retirada" autocomplete="off" maxlength="200" enterkeyhint="search" aria-label="Retirada">
             <button type="button" class="limpar hidden" id="limparOrigem" aria-label="Limpar retirada">×</button>
           </div>
-          <div id="sugOrigem" class="sugestoes"></div>
-          <div id="detOrigem" class="detalhe-end hidden">
-            <p class="rotulo-lado">Retirada</p>
-            <div class="linha-numero">
-              <input id="numOrigem" maxlength="10" inputmode="text" placeholder="Número" autocomplete="off" aria-label="Número da retirada">
-              <label class="sn" for="snOrigem"><input type="checkbox" id="snOrigem"> S/N</label>
-            </div>
-            <input id="compOrigem" maxlength="80" placeholder="Complemento ou referência (opcional)" autocomplete="off" aria-label="Complemento da retirada">
-          </div>
         </div>
-        <button type="button" class="trocar" id="btnTrocar" onclick="trocarPontos()" aria-label="Inverter retirada e entrega">↕</button>
         <div class="campo" id="slotDestino">
           <div class="campo-busca">
             <input id="destino" placeholder="Para onde?" autocomplete="off" maxlength="200" enterkeyhint="search" aria-label="Destino">
             <button type="button" class="limpar hidden" id="limparDestino" aria-label="Limpar destino">×</button>
           </div>
-          <div id="sugDestino" class="sugestoes"></div>
-          <div id="detDestino" class="detalhe-end hidden">
-            <p class="rotulo-lado">Entrega</p>
-            <div class="linha-numero">
-              <input id="numDestino" maxlength="10" inputmode="text" placeholder="Número" autocomplete="off" aria-label="Número da entrega">
-              <label class="sn" for="snDestino"><input type="checkbox" id="snDestino"> S/N</label>
-            </div>
-            <input id="compDestino" maxlength="80" placeholder="Complemento ou referência (opcional)" autocomplete="off" aria-label="Complemento da entrega">
-          </div>
         </div>
       </div>
     </div>
-    <p class="small dica-numero">Digite a rua e o número juntos, como Av Brasil 1234. O pino no mapa ajusta a porta.</p>
-    <button id="btnContinuar" class="btn-preto" type="button" onclick="continuarPlano()">Continuar</button>
-    <div class="chips">
-      <button class="chip" onclick="usarLugar('casa')">🏠 Casa</button>
-      <button class="chip" onclick="usarLugar('trabalho')">💼 Trabalho</button>
-      <button class="chip" onclick="abrirPinoMapa('destino')">📍 Escolher no mapa</button>
+    <div id="sugOrigem" class="sugestoes"></div>
+    <div id="sugDestino" class="sugestoes"></div>
+    <div id="blocoSalvar" class="hidden">
+      <div id="detOrigem" class="detalhe-end hidden">
+        <p class="rotulo-lado">Retirada</p>
+        <div class="linha-numero">
+          <input id="numOrigem" maxlength="10" inputmode="text" placeholder="Número" autocomplete="off" aria-label="Número da retirada">
+          <label class="sn" for="snOrigem"><input type="checkbox" id="snOrigem"> S/N</label>
+        </div>
+        <input id="compOrigem" maxlength="80" placeholder="Complemento ou referência (opcional)" autocomplete="off" aria-label="Complemento da retirada">
+      </div>
+      <div id="detDestino" class="detalhe-end hidden">
+        <p class="rotulo-lado">Entrega</p>
+        <div class="linha-numero">
+          <input id="numDestino" maxlength="10" inputmode="text" placeholder="Número" autocomplete="off" aria-label="Número da entrega">
+          <label class="sn" for="snDestino"><input type="checkbox" id="snDestino"> S/N</label>
+        </div>
+        <input id="compDestino" maxlength="80" placeholder="Complemento ou referência (opcional)" autocomplete="off" aria-label="Complemento da entrega">
+      </div>
+      <button id="btnContinuar" class="btn-preto" type="button" onclick="continuarPlano()">Salvar este endereço</button>
     </div>
-    <div id="listaRecentes" class="lista"></div>
     </div>
   </section>
 

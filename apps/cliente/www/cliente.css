@@ -13,8 +13,11 @@ body.tema-claro { --bg:#ffffff; --text:#111; --muted:#6b7280; --border:#eceef1; 
 #telaPlano .plano-rolagem { flex:1 1 auto; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch;
   overscroll-behavior:contain; display:flex; flex-direction:column; }
 #telaPlano .plano-rolagem > * { flex-shrink:0; }
-#telaPlano .caixa-rota { flex:1 0 auto; min-height:min-content; overflow:visible; align-items:stretch; }
-#telaPlano .campos { min-height:min-content; }
+#telaPlano .caixa-rota { flex:0 0 auto; min-height:min-content; overflow:visible; align-items:stretch; }
+#telaPlano .campos { min-height:min-content; gap:2px; }
+#telaPlano #sugOrigem, #telaPlano #sugDestino { display:none; }
+#telaPlano[data-foco="origem"] #sugOrigem, #telaPlano[data-foco="destino"] #sugDestino { display:block; }
+#telaPlano .sugestoes:empty { display:none !important; }
 #telaPlano .campo, #telaPlano .campo-busca, #telaPlano .detalhe-end, #telaPlano .linha-numero,
 #telaPlano .trilho, #telaPlano .trocar { flex-shrink:0; }
 #telaPlano .campo-busca input, #telaPlano .campos input:not([type="checkbox"]) { min-height:46px; height:auto; }

@@ -84,6 +84,7 @@ function atualizarLocal(avisar) {
     $("locAtual").textContent = aqui.nome;
     montarLugares();
     pintarPontosAzuis();
+    aplicarGpsNoPlano();
   }, err => {
     const negado = err && err.code === 1;
     const tempo = err && err.code === 3;
@@ -166,16 +167,23 @@ function ligarBusca() {
   $("origem").dataset.busca = "1";
   autocompletar($("origem"), $("sugOrigem"), e => definirLado("origem", e), t => marcarNoMapa("origem", t), { bias: biasBusca, recentes: sugestoesRecentes });
   autocompletar($("destino"), $("sugDestino"), e => definirLado("destino", e), t => marcarNoMapa("destino", t), { bias: biasBusca, recentes: sugestoesRecentes });
-  $("origem").addEventListener("input", () => { if ($("origem").dataset.escolhido !== "1") limparDetalhe("origem"); atualizarLimpar(); });
+  $("origem").addEventListener("focus", () => focarCampoPlano("origem"));
+  $("destino").addEventListener("focus", () => focarCampoPlano("destino"));
+  $("origem").addEventListener("input", () => {
+    $("origem").dataset.gps = "";
+    origemGps = false;
+    if ($("origem").dataset.escolhido !== "1") limparDetalhe("origem");
+    atualizarLimpar();
+  });
   $("destino").addEventListener("input", () => { if ($("destino").dataset.escolhido !== "1") limparDetalhe("destino"); atualizarLimpar(); });
   $("limparOrigem").onclick = () => limparCampo("origem");
   $("limparDestino").onclick = () => limparCampo("destino");
   ["sugOrigem", "sugDestino"].forEach(id => {
     const lista = $(id);
+    const input = $(id === "sugOrigem" ? "origem" : "destino");
     if (!lista || lista._ejaObs) return;
     lista._ejaObs = new MutationObserver(() => {
-      const input = lista.parentElement && lista.parentElement.querySelector(".campo-busca input");
-      if (input && document.activeElement === input) encaixarBusca(input);
+      if (document.activeElement === input) encaixarBusca(input);
     });
     lista._ejaObs.observe(lista, { childList: true });
   });
@@ -184,6 +192,23 @@ function ligarBusca() {
 }
 // Com o teclado aberto, o campo focado sobe e as sugestões ocupam o que sobrou,
 // sem esmagar a altura da caixa da rota.
+function listaDoFoco(el) {
+  if (!el) return null;
+  if (el.id === "origem" || (el.closest && el.closest("#slotOrigem"))) return $("sugOrigem");
+  if (el.id === "destino" || (el.closest && el.closest("#slotDestino"))) return $("sugDestino");
+  const campo = el.closest && el.closest(".campo");
+  return campo ? campo.querySelector(".sugestoes") : null;
+}
+function focarCampoPlano(lado) {
+  const tela = $("telaPlano");
+  if (tela) tela.dataset.foco = lado;
+  const outra = $(lado === "origem" ? "sugDestino" : "sugOrigem");
+  if (outra && document.activeElement === $(lado)) outra.innerHTML = "";
+  const campo = $(lado);
+  if (campo && campo.value) setTimeout(() => { try { campo.select(); } catch (e) {} }, 0);
+  encaixarBusca(campo);
+}
+// As duas linhas ficam visíveis. As sugestões ocupam o espaço abaixo da caixa, acima do teclado.
 function encaixarBusca(el, repetir) {
   const tela = $("telaPlano");
   const rol = tela && tela.querySelector(".plano-rolagem");
@@ -191,21 +216,20 @@ function encaixarBusca(el, repetir) {
     limitarSugestaoPino();
     return;
   }
-  const campo = el.closest(".campo") || el;
-  const input = el.matches && el.matches("input, textarea") ? el : campo.querySelector("input");
-  if (!input) return;
-  const lista = campo.querySelector(".sugestoes");
-  const temLista = !!(lista && lista.childElementCount);
-  const margem = 10;
-  const rr = rol.getBoundingClientRect();
-  const ir = input.getBoundingClientRect();
-  if (temLista) rol.scrollTop += ir.top - rr.top - margem;
-  else if (ir.bottom > rr.bottom - margem) rol.scrollTop += ir.bottom - (rr.bottom - margem);
-  else if (ir.top < rr.top + margem) rol.scrollTop -= rr.top + margem - ir.top;
+  const caixa = tela.querySelector(".caixa-rota");
+  const lista = listaDoFoco(el);
+  const margem = 8;
+  if (caixa) {
+    const rr = rol.getBoundingClientRect();
+    const cr = caixa.getBoundingClientRect();
+    if (cr.top < rr.top + margem) rol.scrollTop -= rr.top + margem - cr.top;
+    else if (cr.bottom > rr.bottom - margem && cr.height < rr.height - 24) rol.scrollTop += cr.bottom - (rr.bottom - margem);
+  }
   if (lista) {
+    const temLista = lista.childElementCount > 0;
     if (!temLista) lista.style.maxHeight = "";
-    else {
-      const base = input.getBoundingClientRect().bottom;
+    else if (caixa) {
+      const base = caixa.getBoundingClientRect().bottom;
       const fundo = rol.getBoundingClientRect().bottom;
       lista.style.maxHeight = Math.max(120, Math.floor(fundo - base - 8)) + "px";
     }
@@ -248,7 +272,7 @@ function montarLugares() {
 function montarServicos() {
   const tile = c => { const b = document.createElement("button"); b.className = "servico";
     b.innerHTML = `<span class="bolha">${c.icone}</span><span></span>`; b.lastChild.textContent = c.nome;
-    b.onclick = () => { categoria = c; $("categoriaAtual").textContent = c.nome; irAba("home"); abrirPlano(); }; return b; };
+    b.onclick = () => { categoria = c; if ($("categoriaAtual")) $("categoriaAtual").textContent = c.nome; irAba("home"); abrirPlano(); }; return b; };
   $("servicos").textContent = ""; CATEGORIAS.slice(0, 5).forEach(c => $("servicos").append(tile(c)));
   $("gradeServicos").textContent = ""; CATEGORIAS.forEach(c => $("gradeServicos").append(tile(c)));
 }
@@ -264,32 +288,58 @@ function usarLugar(tipo) { const l = guardar.ler(tipo); if (l) escolherDestino(l
 function maisTarde() { toast("Agendamento chega em breve! Por enquanto, as entregas são para agora."); }
 
 // ---------- Planejar ----------
+let origemGps = false;
+function aplicarGpsNoPlano() {
+  const campo = $("origem");
+  const tela = $("telaPlano");
+  if (!campo || !tela || tela.classList.contains("hidden")) return;
+  const ocupado = campo.dataset.gps !== "1" && !!origem && !origemGps;
+  if (ocupado) return;
+  if (!aqui || !dentroPelotas(aqui.lat, aqui.lng)) return;
+  if (!aqui.nome) {
+    campo.value = "Buscando localização…";
+    campo.dataset.gps = "1";
+    campo.dataset.escolhido = "";
+    atualizarLimpar();
+    return;
+  }
+  origem = { nome: aqui.nome, lat: aqui.lat, lng: aqui.lng, numero: "S/N", complemento: "", tipo: "poi" };
+  origemGps = true;
+  campo.value = textoCampo(aqui.nome, "");
+  campo.dataset.escolhido = "1";
+  campo.dataset.gps = "1";
+  atualizarLimpar();
+  if (!$("destino").value && (document.activeElement === campo || document.activeElement === document.body)) $("destino").focus();
+}
 function abrirPlano() {
   telaSobre("telaPlano", true);
-  if (!origem && aqui && aqui.nome && dentroPelotas(aqui.lat, aqui.lng)) {
-    origem = { nome: aqui.nome, lat: aqui.lat, lng: aqui.lng, numero: "S/N", complemento: "", tipo: "poi" };
-    $("origem").value = aqui.nome; $("origem").dataset.escolhido = "1";
+  if (!definindo) show("blocoSalvar", false);
+  if (origem && $("origem").dataset.gps !== "1") {
+    $("origem").value = textoCampo(origem.nome, origem.numero);
+    $("origem").dataset.escolhido = "1";
+  } else aplicarGpsNoPlano();
+  if (destino && destino.nome) {
+    $("destino").value = textoCampo(destino.nome, destino.numero);
+    $("destino").dataset.escolhido = "1";
   }
-  const lista = $("listaRecentes"); lista.textContent = "";
-  const base = origem || aqui;
-  const rec = recentes();
-  if (!rec.length) lista.innerHTML = '<p class="small" style="padding:8px 4px">Seus endereços recentes aparecem aqui.</p>';
-  rec.forEach(r => {
-    const rot = rotuloLugar(r);
-    const it = itemLugar("🕒", rot.titulo, rot.sub, () => escolherDestino(r));
-    if (base) it.querySelector("i").insertAdjacentHTML("beforeend", `<small>${kmTxt(dist(base, r))}</small>`);
-    lista.append(it);
-  });
   atualizarBotaoPlano();
+  atualizarLimpar();
   clearTimeout(focoPlano);
   focoPlano = setTimeout(() => {
     const ativo = document.activeElement;
     if (ativo && ativo.closest && ativo.closest("#telaPlano") && ativo.matches("input, textarea")) return;
-    (origem ? $("destino") : $("origem")).focus();
+    ($("origem").value ? $("destino") : $("origem")).focus();
   }, 50);
 }
 let focoPlano = null;
-function fecharPlano() { alojarNumeros(false); telaSobre("telaPlano", false); definindo = null; $("destino").placeholder = "Para onde?"; atualizarBotaoPlano(); }
+function fecharPlano() {
+  alojarNumeros(false);
+  show("blocoSalvar", false);
+  telaSobre("telaPlano", false);
+  definindo = null;
+  $("destino").placeholder = "Para onde?";
+  atualizarBotaoPlano();
+}
 function escolherDestino(e) { definirLado("destino", e); }
 function sufixo(lado) { return lado === "origem" ? "Origem" : "Destino"; }
 function rotuloLugar(e) {
@@ -323,6 +373,8 @@ function limparCampo(lado) {
   const campo = $(lado);
   campo.value = "";
   campo.dataset.escolhido = "";
+  campo.dataset.gps = "";
+  if (lado === "origem") origemGps = false;
   limparDetalhe(lado);
   const lista = $("sug" + sufixo(lado));
   if (lista) lista.innerHTML = "";
@@ -347,8 +399,10 @@ function definirLado(lado, e) {
   if (lado === "origem") origem = obj; else destino = obj;
   const campo = $(lado);
   if (campo) {
-    campo.value = e.titulo || e.nome || "";
+    campo.value = textoCampo(e.nome, extra.numero);
     campo.dataset.escolhido = "1";
+    campo.dataset.gps = "";
+    if (lado === "origem") origemGps = false;
   }
   lembrarRecente(obj);
   atualizarLimpar();
@@ -357,7 +411,9 @@ function definirLado(lado, e) {
     if (!origem) { toast("Agora escolha o endereço de retirada."); $("origem").focus(); return; }
   }
   if (definindo) {
+    show("blocoSalvar", true);
     preencherDetalhe(lado, obj);
+    if ($("btnContinuar")) show("btnContinuar", true);
     return;
   }
   if (origem && destino && origem.lat != null && destino.lat != null && origem.numero && destino.numero) abrirConfirmar();
@@ -390,9 +446,10 @@ function alojarNumeros(noMapa) {
     if (origem) preencherDetalhe("origem", origem); else show("detOrigem", false);
     if (destino) preencherDetalhe("destino", destino); else show("detDestino", false);
   } else {
-    if ($("slotOrigem")) $("slotOrigem").append(o);
-    if ($("slotDestino")) $("slotDestino").append(d);
-    if (!definindo) { show("detOrigem", false); show("detDestino", false); }
+    const guarda = $("blocoSalvar");
+    if (guarda) guarda.insertBefore(d, guarda.firstChild);
+    if (guarda) guarda.insertBefore(o, guarda.firstChild);
+    if (!definindo) { show("detOrigem", false); show("detDestino", false); show("blocoSalvar", false); }
   }
 }
 function lerDetalhe(lado) {

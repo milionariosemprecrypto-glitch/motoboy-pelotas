@@ -511,6 +511,13 @@ function validarDetalhe(numero, sn, complemento) {
 }
 
 // "Rua X · Centro, nº 120 — portão azul" (número e complemento somem se não existirem).
+// O que aparece no campo: "Rua Padre Anchieta, 1978". S/N não entra na linha.
+function textoCampo(nome, numero) {
+  const base = String(nome || "").trim();
+  const n = numero && numero !== "S/N" ? String(numero).trim() : "";
+  return n ? base + ", " + n : base;
+}
+
 function textoEndereco(nome, numero, complemento) {
   const n = !numero ? "" : numero === "S/N" ? "S/N" : "nº " + numero;
   const linha = [nome || "", n].filter(Boolean).join(", ");

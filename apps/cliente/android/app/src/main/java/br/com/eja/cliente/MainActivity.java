@@ -2,6 +2,7 @@ package br.com.eja.cliente;
 
 import android.os.Bundle;
 import android.view.View;
+import android.view.WindowManager;
 import android.webkit.WebView;
 
 import androidx.core.graphics.Insets;
@@ -19,6 +20,7 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
+        getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING);
         aplicarAparencia(true);
         View decor = getWindow().getDecorView();
         ViewCompat.setOnApplyWindowInsetsListener(decor, (v, insets) -> {
@@ -35,6 +37,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onResume() {
         super.onResume();
+        getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING);
         View decor = getWindow().getDecorView();
         decor.post(() -> ViewCompat.requestApplyInsets(decor));
     }
@@ -57,7 +60,12 @@ public class MainActivity extends BridgeActivity {
         WebView web = getBridge().getWebView();
         float d = getResources().getDisplayMetrics().density;
         if (d <= 0f) d = 1f;
-        final String js = "document.documentElement.style.setProperty('--eja-sat','" + (top / d) + "px');"
+        boolean depuravel = (getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0;
+        final String debug = depuravel
+                ? "document.documentElement.classList.add('eja-debug');"
+                : "";
+        final String js = debug
+                + "document.documentElement.style.setProperty('--eja-sat','" + (top / d) + "px');"
                 + "document.documentElement.style.setProperty('--eja-sab','" + (bottom / d) + "px');"
                 + "document.documentElement.style.setProperty('--eja-sal','" + (left / d) + "px');"
                 + "document.documentElement.style.setProperty('--eja-sar','" + (right / d) + "px');"

@@ -98,9 +98,8 @@ function criarMapa(id, opcoes = {}) {
 function redimensionarMapas() {
   mapasVivos.forEach(m => ajustarMapa(m));
 }
-// O teclado ou encolhe a janela (adjustResize) ou fica por cima (edge-to-edge).
-// --eja-ime é o teclado nativo. --teclado é só o que ainda cobre a WebView,
-// descontado o que a janela já encolheu. Nunca somar os dois.
+// O teclado fica por cima da WebView (adjustNothing). Estas variáveis servem
+// folhas e chat. A tela Planeje sua entrega não as usa: a caixa tem altura fixa.
 let alturaCheia = 0;
 function lerPxVar(nome) {
   const v = parseFloat(getComputedStyle(document.documentElement).getPropertyValue(nome));

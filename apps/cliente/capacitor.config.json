@@ -5,12 +5,16 @@
   "backgroundColor": "#0b0b0b",
   "android": {
     "backgroundColor": "#0b0b0b",
-    "appendUserAgent": "E-Ja/1.6 (+https://eja-site.pages.dev)"
+    "appendUserAgent": "E-Ja/1.7 (+https://eja-site.pages.dev)"
   },
   "plugins": {
     "SplashScreen": {
       "launchShowDuration": 1200,
       "backgroundColor": "#0b0b0b"
+    },
+    "Keyboard": {
+      "resize": "none",
+      "resizeOnFullScreen": false
     }
   }
 }

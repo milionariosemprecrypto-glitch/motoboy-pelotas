@@ -44,6 +44,7 @@ async function carregar(u) {
   montarServicos(); irAba("home"); atualizarLocal(false);
   iniciarPush("cliente", () => atualizarStatus());
   ligarBusca();
+  marcarVersaoDebug();
   await carregarHistorico();
   const { data } = await db.rpc("meu_pedido_ativo");
   if (data && data[0]) mostrarPedido(data[0]);
@@ -194,8 +195,7 @@ function ligarBusca() {
   ligarSn("origem"); ligarSn("destino");
   atualizarLimpar();
 }
-// Com o teclado aberto, o campo focado sobe e as sugestões ocupam o que sobrou,
-// sem esmagar a altura da caixa da rota.
+// A caixa da rota não muda de tamanho. Só a lista de sugestões ganha um max-height.
 function listaDoFoco(el) {
   if (!el) return null;
   if (el.id === "origem" || (el.closest && el.closest("#slotOrigem"))) return $("sugOrigem");
@@ -212,35 +212,34 @@ function focarCampoPlano(lado) {
   if (campo && campo.value) setTimeout(() => { try { campo.select(); } catch (e) {} }, 0);
   encaixarBusca(campo);
 }
-// As duas linhas ficam visíveis. As sugestões ocupam o espaço abaixo da caixa, acima do teclado.
-function encaixarBusca(el, repetir) {
+// max-height da lista = visualViewport até o fim, menos a base da caixa.
+// Valor estranho (NaN, negativo, minúsculo ou enorme) cai em 220px. A caixa não é tocada.
+function alturaListaSugestoes(caixa) {
+  const base = caixa ? caixa.getBoundingClientRect().bottom : 0;
+  const vv = window.visualViewport;
+  const fundo = vv ? vv.offsetTop + vv.height : window.innerHeight;
+  const h = Math.floor(fundo - base - 8);
+  if (h >= 96 && h <= 480) return h;
+  return 220;
+}
+function encaixarBusca(el) {
   const tela = $("telaPlano");
-  const rol = tela && tela.querySelector(".plano-rolagem");
-  if (!rol || !el || !tela || tela.classList.contains("hidden") || !rol.contains(el)) {
+  if (!el || !tela || tela.classList.contains("hidden") || !tela.contains(el)) {
     limitarSugestaoPino();
     return;
   }
-  const caixa = tela.querySelector(".caixa-rota");
   const lista = listaDoFoco(el);
-  const margem = 8;
-  if (caixa) {
-    const rr = rol.getBoundingClientRect();
-    const cr = caixa.getBoundingClientRect();
-    if (cr.top < rr.top + margem) rol.scrollTop -= rr.top + margem - cr.top;
-    else if (cr.bottom > rr.bottom - margem && cr.height < rr.height - 24) rol.scrollTop += cr.bottom - (rr.bottom - margem);
-  }
-  if (lista) {
-    const temLista = lista.childElementCount > 0;
-    if (!temLista) lista.style.maxHeight = "";
-    else if (caixa) {
-      const base = caixa.getBoundingClientRect().bottom;
-      const fundo = rol.getBoundingClientRect().bottom;
-      lista.style.maxHeight = Math.max(120, Math.floor(fundo - base - 8)) + "px";
-    }
-  }
+  const caixa = tela.querySelector(".caixa-rota");
+  if (lista) lista.style.maxHeight = alturaListaSugestoes(caixa) + "px";
   limitarSugestaoPino();
-  if (repetir !== false) requestAnimationFrame(() => encaixarBusca(el, false));
 }
+function marcarVersaoDebug() {
+  const el = $("planoDebug");
+  if (!el) return;
+  el.textContent = "v" + APP_VERSAO;
+  el.classList.toggle("hidden", !document.documentElement.classList.contains("eja-debug"));
+}
+document.addEventListener("eja-insets", marcarVersaoDebug);
 function limitarSugestaoPino() {
   const lista = $("sugPino"), input = $("buscaPino"), tela = $("telaPino");
   if (!lista || !input || !tela || tela.classList.contains("hidden")) return;
@@ -317,7 +316,9 @@ function aplicarGpsNoPlano() {
 }
 function abrirPlano() {
   telaSobre("telaPlano", true);
+  $("telaPlano").classList.toggle("plano-salvar", !!definindo);
   if (!definindo) show("blocoSalvar", false);
+  marcarVersaoDebug();
   if (origem && $("origem").dataset.gps !== "1") {
     $("origem").value = textoCampo(origem.nome, origem.numero);
     $("origem").dataset.escolhido = "1";
@@ -339,6 +340,7 @@ let focoPlano = null;
 function fecharPlano() {
   alojarNumeros(false);
   show("blocoSalvar", false);
+  $("telaPlano").classList.remove("plano-salvar");
   telaSobre("telaPlano", false);
   definindo = null;
   $("destino").placeholder = "Para onde?";
@@ -415,6 +417,7 @@ function definirLado(lado, e) {
     if (!origem) { toast("Agora escolha o endereço de retirada."); $("origem").focus(); return; }
   }
   if (definindo) {
+    $("telaPlano").classList.add("plano-salvar");
     show("blocoSalvar", true);
     preencherDetalhe(lado, obj);
     if ($("btnContinuar")) show("btnContinuar", true);

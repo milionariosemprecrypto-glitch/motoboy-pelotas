@@ -29,8 +29,7 @@ public class MainActivity extends BridgeActivity {
         ViewCompat.setOnApplyWindowInsetsListener(decor, (v, insets) -> {
             Insets bars = insets.getInsets(WindowInsetsCompat.Type.systemBars());
             Insets ime = insets.getInsets(WindowInsetsCompat.Type.ime());
-            int bottom = Math.max(bars.bottom, ime.bottom);
-            publicarInsets(bars.top, bottom, bars.left, bars.right);
+            publicarInsets(bars.top, bars.bottom, bars.left, bars.right, ime.bottom);
             return insets;
         });
         decor.post(() -> ViewCompat.requestApplyInsets(decor));
@@ -43,7 +42,7 @@ public class MainActivity extends BridgeActivity {
         decor.post(() -> ViewCompat.requestApplyInsets(decor));
     }
 
-    private void publicarInsets(int top, int bottom, int left, int right) {
+    private void publicarInsets(int top, int bottom, int left, int right, int ime) {
         if (getBridge() == null || getBridge().getWebView() == null) {
             if (tentativasInsets++ < 8) {
                 getWindow().getDecorView().postDelayed(() -> ViewCompat.requestApplyInsets(getWindow().getDecorView()), 250);
@@ -58,6 +57,7 @@ public class MainActivity extends BridgeActivity {
                 + "document.documentElement.style.setProperty('--eja-sab','" + (bottom / d) + "px');"
                 + "document.documentElement.style.setProperty('--eja-sal','" + (left / d) + "px');"
                 + "document.documentElement.style.setProperty('--eja-sar','" + (right / d) + "px');"
+                + "document.documentElement.style.setProperty('--eja-ime','" + (ime / d) + "px');"
                 + "window.dispatchEvent(new Event('eja-insets'));";
         web.post(() -> web.evaluateJavascript(js, null));
     }

@@ -7,20 +7,22 @@ body.tema-claro { --bg:#ffffff; --text:#111; --muted:#6b7280; --border:#eceef1; 
 .mapa-tela .folha, .mapa-tela .fab-voltar, .mapa-tela .fab-mapa, .mapa-tela .busca-flutuante { pointer-events:auto; }
 .mapa-tela .fab-mapa { display:none; }
 .mapa-tela.mapa-livre .fab-mapa { display:grid; place-items:center; }
-#telaPlano.tela.sobre { display:flex; flex-direction:column; height:auto; min-height:0; max-height:none;
-  top:0; right:0; left:0; bottom:var(--teclado, 0px); overflow:hidden;
+html.plano-aberto, html.plano-aberto body { overflow:hidden; height:100%; }
+#telaPlano.tela.sobre { display:flex; flex-direction:column; min-height:0; max-height:none;
+  top:var(--vv-topo, 0px); right:0; left:0; bottom:auto; height:var(--vv-altura, 100%); overflow:hidden;
   padding:calc(12px + var(--safe-top)) 16px calc(12px + var(--safe-bottom)); background:#fff; }
 #telaPlano .plano-rolagem { flex:1 1 auto; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch;
   overscroll-behavior:contain; display:flex; flex-direction:column; }
 #telaPlano .plano-rolagem > * { flex-shrink:0; }
-#telaPlano .caixa-rota { flex:0 0 auto; min-height:min-content; overflow:visible; align-items:stretch; }
-#telaPlano .campos { min-height:min-content; gap:2px; }
+#telaPlano .caixa-rota { flex:0 0 auto; height:auto; min-height:128px; overflow:visible; align-items:stretch; }
+#telaPlano .campos { flex:1 0 auto; min-height:104px; gap:2px; }
 #telaPlano #sugOrigem, #telaPlano #sugDestino { display:none; }
 #telaPlano[data-foco="origem"] #sugOrigem, #telaPlano[data-foco="destino"] #sugDestino { display:block; }
 #telaPlano .sugestoes:empty { display:none !important; }
 #telaPlano .campo, #telaPlano .campo-busca, #telaPlano .detalhe-end, #telaPlano .linha-numero,
 #telaPlano .trilho, #telaPlano .trocar { flex-shrink:0; }
-#telaPlano .campo-busca input, #telaPlano .campos input:not([type="checkbox"]) { min-height:46px; height:auto; }
+#telaPlano .campo, #telaPlano .campo-busca { flex:0 0 auto; min-height:46px; }
+#telaPlano .campo-busca input, #telaPlano .campos input:not([type="checkbox"]) { min-height:46px; height:46px; flex:0 0 auto; }
 #telaPlano .trilho { align-self:stretch; min-height:min-content; }
 #telaPlano .sugestoes { position:static; box-shadow:none; border:0; margin-top:4px; max-height:none; background:transparent; overflow:auto; }
 #telaPlano .sugestao, #telaPlano button.sugestao { border-radius:12px; }

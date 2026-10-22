@@ -62,7 +62,11 @@ function irAba(a) {
   }
   window.scrollTo(0, 0);
 }
-const telaSobre = (id, on) => { show(id, on); document.body.classList.toggle("sem-nav", !!document.querySelector(".tela.sobre:not(.hidden)")); };
+const telaSobre = (id, on) => {
+  show(id, on);
+  document.body.classList.toggle("sem-nav", !!document.querySelector(".tela.sobre:not(.hidden)"));
+  document.documentElement.classList.toggle("plano-aberto", !!($("telaPlano") && !$("telaPlano").classList.contains("hidden")));
+};
 
 // ---------- Localização atual ----------
 function atualizarLocal(avisar) {

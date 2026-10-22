@@ -98,13 +98,30 @@ function criarMapa(id, opcoes = {}) {
 function redimensionarMapas() {
   mapasVivos.forEach(m => ajustarMapa(m));
 }
-// O teclado do Android ou reduz a janela (adjustResize) ou cobre a tela.
-// --teclado é só a parte que continua por cima da janela, para não encolher duas vezes.
+// O teclado ou encolhe a janela (adjustResize) ou fica por cima (edge-to-edge).
+// --eja-ime é o teclado nativo. --teclado é só o que ainda cobre a WebView,
+// descontado o que a janela já encolheu. Nunca somar os dois.
+let alturaCheia = 0;
+function lerPxVar(nome) {
+  const v = parseFloat(getComputedStyle(document.documentElement).getPropertyValue(nome));
+  return Number.isFinite(v) ? v : 0;
+}
 function medirTeclado() {
+  const root = document.documentElement;
   const vv = window.visualViewport;
-  const teclado = vv ? Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop)) : 0;
-  document.documentElement.style.setProperty("--teclado", teclado + "px");
-  document.documentElement.classList.toggle("teclado-aberto", teclado > 0);
+  const ime = lerPxVar("--eja-ime");
+  const topo = vv ? Math.max(0, Math.round(vv.offsetTop)) : 0;
+  const alturaVv = vv ? Math.max(0, Math.round(vv.height)) : window.innerHeight;
+  if (window.innerHeight >= alturaCheia) alturaCheia = window.innerHeight;
+  const encolheu = Math.max(0, alturaCheia - window.innerHeight);
+  const sobrepoe = Math.max(0, Math.round(window.innerHeight - alturaVv - topo));
+  const imeAinda = Math.max(0, Math.round(ime - encolheu - sobrepoe));
+  const teclado = Math.max(sobrepoe, imeAinda);
+  const alturaPainel = Math.max(0, alturaVv - imeAinda);
+  root.style.setProperty("--teclado", teclado + "px");
+  root.style.setProperty("--vv-topo", topo + "px");
+  root.style.setProperty("--vv-altura", alturaPainel + "px");
+  root.classList.toggle("teclado-aberto", teclado > 0);
   return teclado;
 }
 function aoMudarViewport() {
@@ -121,7 +138,7 @@ function aoMudarViewport() {
   }, 60);
 }
 window.addEventListener("resize", aoMudarViewport);
-window.addEventListener("orientationchange", () => setTimeout(aoMudarViewport, 180));
+window.addEventListener("orientationchange", () => { alturaCheia = 0; setTimeout(aoMudarViewport, 180); });
 window.addEventListener("eja-insets", aoMudarViewport);
 if (window.visualViewport) {
   window.visualViewport.addEventListener("resize", aoMudarViewport);

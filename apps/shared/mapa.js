@@ -98,10 +98,42 @@ function criarMapa(id, opcoes = {}) {
 function redimensionarMapas() {
   mapasVivos.forEach(m => ajustarMapa(m));
 }
-window.addEventListener("resize", redimensionarMapas);
-window.addEventListener("orientationchange", () => setTimeout(redimensionarMapas, 180));
-window.addEventListener("eja-insets", redimensionarMapas);
-if (window.visualViewport) window.visualViewport.addEventListener("resize", redimensionarMapas);
+// O teclado do Android ou reduz a janela (adjustResize) ou cobre a tela.
+// --teclado é só a parte que continua por cima da janela, para não encolher duas vezes.
+function medirTeclado() {
+  const vv = window.visualViewport;
+  const teclado = vv ? Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop)) : 0;
+  document.documentElement.style.setProperty("--teclado", teclado + "px");
+  document.documentElement.classList.toggle("teclado-aberto", teclado > 0);
+  return teclado;
+}
+function aoMudarViewport() {
+  medirTeclado();
+  redimensionarMapas();
+  const el = document.activeElement;
+  if (!el || !el.matches || !el.matches("input, textarea, select")) return;
+  if (el.closest && el.closest("#telaPlano") && typeof window.encaixarBusca === "function") {
+    window.encaixarBusca(el);
+    return;
+  }
+  setTimeout(() => {
+    try { el.scrollIntoView({ block: "nearest", inline: "nearest" }); } catch (e) {}
+  }, 60);
+}
+window.addEventListener("resize", aoMudarViewport);
+window.addEventListener("orientationchange", () => setTimeout(aoMudarViewport, 180));
+window.addEventListener("eja-insets", aoMudarViewport);
+if (window.visualViewport) {
+  window.visualViewport.addEventListener("resize", aoMudarViewport);
+  window.visualViewport.addEventListener("scroll", medirTeclado);
+}
+document.addEventListener("focusin", ev => {
+  const el = ev.target;
+  if (!el || !el.matches || !el.matches("input, textarea, select")) return;
+  if (el.closest && el.closest("#telaPlano") && typeof window.encaixarBusca === "function") window.encaixarBusca(el);
+  setTimeout(aoMudarViewport, 280);
+});
+medirTeclado();
 
 function ouvintes(alvo) {
   const mapa = {};

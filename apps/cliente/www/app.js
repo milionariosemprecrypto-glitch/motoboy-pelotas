@@ -170,9 +170,58 @@ function ligarBusca() {
   $("destino").addEventListener("input", () => { if ($("destino").dataset.escolhido !== "1") limparDetalhe("destino"); atualizarLimpar(); });
   $("limparOrigem").onclick = () => limparCampo("origem");
   $("limparDestino").onclick = () => limparCampo("destino");
+  ["sugOrigem", "sugDestino"].forEach(id => {
+    const lista = $(id);
+    if (!lista || lista._ejaObs) return;
+    lista._ejaObs = new MutationObserver(() => {
+      const input = lista.parentElement && lista.parentElement.querySelector(".campo-busca input");
+      if (input && document.activeElement === input) encaixarBusca(input);
+    });
+    lista._ejaObs.observe(lista, { childList: true });
+  });
   ligarSn("origem"); ligarSn("destino");
   atualizarLimpar();
 }
+// Com o teclado aberto, o campo focado sobe e as sugestões ocupam o que sobrou,
+// sem esmagar a altura da caixa da rota.
+function encaixarBusca(el, repetir) {
+  const tela = $("telaPlano");
+  const rol = tela && tela.querySelector(".plano-rolagem");
+  if (!rol || !el || !tela || tela.classList.contains("hidden") || !rol.contains(el)) {
+    limitarSugestaoPino();
+    return;
+  }
+  const campo = el.closest(".campo") || el;
+  const input = el.matches && el.matches("input, textarea") ? el : campo.querySelector("input");
+  if (!input) return;
+  const lista = campo.querySelector(".sugestoes");
+  const temLista = !!(lista && lista.childElementCount);
+  const margem = 10;
+  const rr = rol.getBoundingClientRect();
+  const ir = input.getBoundingClientRect();
+  if (temLista) rol.scrollTop += ir.top - rr.top - margem;
+  else if (ir.bottom > rr.bottom - margem) rol.scrollTop += ir.bottom - (rr.bottom - margem);
+  else if (ir.top < rr.top + margem) rol.scrollTop -= rr.top + margem - ir.top;
+  if (lista) {
+    if (!temLista) lista.style.maxHeight = "";
+    else {
+      const base = input.getBoundingClientRect().bottom;
+      const fundo = rol.getBoundingClientRect().bottom;
+      lista.style.maxHeight = Math.max(120, Math.floor(fundo - base - 8)) + "px";
+    }
+  }
+  limitarSugestaoPino();
+  if (repetir !== false) requestAnimationFrame(() => encaixarBusca(el, false));
+}
+function limitarSugestaoPino() {
+  const lista = $("sugPino"), input = $("buscaPino"), tela = $("telaPino");
+  if (!lista || !input || !tela || tela.classList.contains("hidden")) return;
+  const vv = window.visualViewport;
+  const fundo = vv ? vv.offsetTop + vv.height : window.innerHeight;
+  const base = input.getBoundingClientRect().bottom;
+  lista.style.maxHeight = Math.max(96, Math.floor(fundo - base - 16)) + "px";
+}
+window.encaixarBusca = encaixarBusca;
 function biasBusca() {
   if (aqui && dentroPelotas(aqui.lat, aqui.lng)) return [aqui.lat, aqui.lng];
   return null;
@@ -232,12 +281,14 @@ function abrirPlano() {
     lista.append(it);
   });
   atualizarBotaoPlano();
-  setTimeout(() => {
+  clearTimeout(focoPlano);
+  focoPlano = setTimeout(() => {
     const ativo = document.activeElement;
-    if (ativo && /^num|^comp|^sn/.test(ativo.id || "")) return;
+    if (ativo && ativo.closest && ativo.closest("#telaPlano") && ativo.matches("input, textarea")) return;
     (origem ? $("destino") : $("origem")).focus();
   }, 50);
 }
+let focoPlano = null;
 function fecharPlano() { alojarNumeros(false); telaSobre("telaPlano", false); definindo = null; $("destino").placeholder = "Para onde?"; atualizarBotaoPlano(); }
 function escolherDestino(e) { definirLado("destino", e); }
 function sufixo(lado) { return lado === "origem" ? "Origem" : "Destino"; }
@@ -476,6 +527,11 @@ function abrirPinoMapa(lado, texto) {
       agendarNomear();
     }, { bias: () => pinoAlvo && dentroPelotas(pinoAlvo.lat, pinoAlvo.lng) ? [pinoAlvo.lat, pinoAlvo.lng] : biasBusca() });
     $("buscaPino").addEventListener("input", atualizarLimpar);
+    $("buscaPino").addEventListener("focus", limitarSugestaoPino);
+    if (!$("sugPino")._ejaObs) {
+      $("sugPino")._ejaObs = new MutationObserver(() => { if (document.activeElement === $("buscaPino")) limitarSugestaoPino(); });
+      $("sugPino")._ejaObs.observe($("sugPino"), { childList: true });
+    }
     $("limparPino").onclick = () => { $("buscaPino").value = ""; $("sugPino").innerHTML = ""; pinoTextoFixo = ""; atualizarLimpar(); };
   }
   $("buscaPino").value = pinoTextoFixo;

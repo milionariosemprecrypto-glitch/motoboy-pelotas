@@ -61,11 +61,14 @@ try {
     await page.evaluate(async (texto, modo) => {
       const campo = document.getElementById("destino");
       campo.focus();
-      campo.value = modo === "gboard" ? "" : texto;
       if (modo === "gboard") {
+        campo.value = "";
         campo.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
         campo.dispatchEvent(new CompositionEvent("compositionupdate", { data: texto, bubbles: true }));
+      } else if (modo === "poll") {
+        campo.value = texto;
       } else {
+        campo.value = texto;
         campo.dispatchEvent(new Event("input", { bubbles: true }));
       }
       const lista = document.getElementById("sugDestino");
@@ -83,9 +86,32 @@ try {
         fora: b.classList.contains("fora"),
         aviso: (b.querySelector(".sug-txt span") && b.querySelector(".sug-txt span").textContent) || ""
       }));
-      return { texto: lista.innerText.slice(0, 400), itens, foco: document.getElementById("telaPlano").dataset.foco, logs: (window.__logs || []).slice(-6) };
+      const estado = document.getElementById("estadoBusca");
+      return {
+        texto: lista.innerText.slice(0, 400),
+        itens,
+        foco: document.getElementById("telaPlano").dataset.foco,
+        logs: (window.__logs || []).slice(-6),
+        estado: estado ? estado.textContent : "",
+        display: getComputedStyle(lista).display,
+        ativa: lista.classList.contains("ativa"),
+        selecionado: campoSel()
+      };
+      function campoSel() {
+        const campo = document.getElementById("destino");
+        const n = (campo.value || "").length;
+        return n > 0 && campo.selectionStart === 0 && campo.selectionEnd === n;
+      }
     });
   }
+
+  const estevao = await digitar("Rua Estevão Cândido Jorge dos Reis, 91", "poll");
+  console.log("estevao", JSON.stringify(estevao).slice(0, 700));
+  ok(estevao.ativa && estevao.display === "block", "a lista fica visível embaixo da caixa (" + estevao.display + ")");
+  ok(!!estevao.estado, "há um estado visível sob o campo (" + estevao.estado + ")");
+  ok(!estevao.selecionado, "o texto digitado não fica inteiro selecionado");
+  ok(estevao.itens.some(i => /Jorge dos Reis/i.test(i.titulo) && !i.fora), "Rua Estevão Jorge dos Reis em Pelotas aparece com o GPS em Turuçu");
+  await page.screenshot({ path: DIR + "/busca-estevao-poll.png" });
 
   const brasil = await digitar("Av Brasil", "gboard");
   console.log("brasil", JSON.stringify(brasil).slice(0, 700));

@@ -11,7 +11,7 @@ html.plano-aberto, html.plano-aberto body { overflow:hidden; }
 /* A tela ocupa o viewport de layout (100%), nunca dvh nem visualViewport.
    A caixa e os campos têm altura em px e flex:none: o teclado não consegue encolhê-los. */
 #telaPlano.tela.sobre { position:fixed; top:0; left:0; right:0; bottom:auto; height:100%; max-height:none; min-height:0;
-  display:block; overflow:hidden; padding:28px 16px 0; background:#fff; }
+  display:block; overflow-x:hidden; overflow-y:auto; padding:28px 16px 24px; background:#fff; }
 #telaPlano .plano-topo { height:48px; flex:none; overflow:hidden; }
 #telaPlano .plano-topo h2 { white-space:nowrap; }
 #telaPlano .plano-debug { margin-left:auto; border:0; background:transparent; padding:8px 4px; font:600 11px Poppins, sans-serif; color:#9ca3af; }
@@ -30,10 +30,11 @@ html.plano-aberto, html.plano-aberto body { overflow:hidden; }
 #telaPlano .campo-busca input, #telaPlano .campos input:not([type="checkbox"]) {
   flex:none !important; height:52px !important; min-height:52px !important; max-height:52px !important;
   padding:0 8px; box-sizing:border-box; }
-#telaPlano #sugOrigem, #telaPlano #sugDestino { display:none; }
-#telaPlano[data-foco="origem"] #sugOrigem, #telaPlano[data-foco="destino"] #sugDestino { display:block; }
-#telaPlano .sugestoes:empty { display:none !important; }
-#telaPlano .sugestoes { position:static; box-shadow:none; border:0; margin-top:8px; max-height:220px; background:transparent; overflow-y:auto; }
+#telaPlano .sugestoes { display:none; position:relative !important; z-index:30; left:auto; right:auto;
+  box-shadow:none; border:0; margin-top:8px; min-height:0; max-height:50vh; background:#fff; overflow-y:auto; }
+#telaPlano .sugestoes.ativa { display:block !important; min-height:48px; }
+.estado-busca { display:block; margin:10px 2px 0; min-height:22px; font:600 15px/1.35 Poppins, sans-serif; color:#111; }
+.estado-busca:empty { display:none; }
 #telaPlano .sugestao, #telaPlano button.sugestao { border-radius:12px; }
 #telaPlano:not(.plano-salvar) #blocoSalvar { display:none !important; }
 .tema-claro input, .tema-claro select { background:#f3f4f6; color:#111; border:1px solid transparent; border-radius:12px; }

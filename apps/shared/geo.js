@@ -269,7 +269,7 @@ function opcoesBusca(arg) {
   if (typeof arg === "function") return { buscar: arg, signal: null, bias: null };
   const o = arg || {};
   return {
-    buscar: o.buscar || (typeof fetch === "function" ? fetch : null),
+    buscar: o.buscar || (typeof buscarHttp === "function" ? buscarHttp : (typeof fetch === "function" ? fetch : null)),
     signal: o.signal || null,
     bias: o.bias || null,
     evento: o.evento || "",
@@ -279,6 +279,63 @@ function opcoesBusca(arg) {
 }
 
 const BUSCA_TIMEOUT_MS = 8000;
+let transporteBusca = "fetch";
+
+function httpNativo() {
+  try {
+    const cap = typeof window !== "undefined" ? window.Capacitor : null;
+    if (!cap || typeof cap.isNativePlatform !== "function" || !cap.isNativePlatform()) return null;
+    return (cap.Plugins && cap.Plugins.CapacitorHttp) || null;
+  } catch (e) { return null; }
+}
+
+// No WebView o fetch para o Photon/Nominatim esbarra em CORS (https://localhost).
+// O plugin nativo fala direto com o servidor e pode mandar User-Agent, que o Nominatim exige.
+async function buscarHttp(url, init) {
+  if (init && init.signal && init.signal.aborted) {
+    const e = new Error("abort");
+    e.name = "AbortError";
+    throw e;
+  }
+  const nativo = httpNativo();
+  if (nativo && typeof nativo.get === "function") {
+    try {
+      const versao = typeof APP_VERSAO !== "undefined" ? APP_VERSAO : "1.10";
+      const res = await nativo.get({
+        url: String(url),
+        headers: {
+          "Accept": "application/json",
+          "User-Agent": "E-Ja/" + versao + " (entrega em Pelotas; +https://eja-site.pages.dev)",
+          "Referer": "https://eja-site.pages.dev/"
+        },
+        connectTimeout: BUSCA_TIMEOUT_MS,
+        readTimeout: BUSCA_TIMEOUT_MS
+      });
+      transporteBusca = "capacitor-http";
+      const status = res && res.status ? Number(res.status) : 0;
+      let data = res ? res.data : null;
+      if (typeof data === "string") {
+        try { data = JSON.parse(data); } catch (e) {}
+      }
+      return { ok: status >= 200 && status < 300, status: status, json: async () => data };
+    } catch (e) {
+      transporteBusca = "fetch";
+      const nativoMsg = (e && (e.message || e.errorMessage)) || "capacitor-http";
+      try {
+        const r = await fetch(url, init);
+        transporteBusca = "fetch depois de " + nativoMsg;
+        return r;
+      } catch (f) {
+        const err = f instanceof Error ? f : new Error(String(f || "falha"));
+        err.message = "capacitor-http: " + nativoMsg + "; fetch: " + (err.message || "falha");
+        err.rede = true;
+        throw err;
+      }
+    }
+  }
+  transporteBusca = "fetch";
+  return fetch(url, init);
+}
 
 function publicarDebug(diag) {
   const g = typeof window !== "undefined" ? window : null;
@@ -467,6 +524,7 @@ async function buscarEnderecos(texto, buscarOuOpts) {
   try { if (typeof navigator !== "undefined") diag.online = navigator.onLine; } catch (e) {}
   function fim(lista, erro) {
     diag.naLista = lista ? lista.length : 0;
+    diag.transporte = transporteBusca;
     if (erro) diag.erro = erro;
     publicarDebug(diag);
     return lista || [];
@@ -515,9 +573,11 @@ async function buscarEnderecos(texto, buscarOuOpts) {
         return buscarEnderecos(texto, deNovo);
       }
     }
-    fim([], "rede");
-    const err = new Error("rede");
+    const ultima = (diag.chamadas || []).slice().reverse().find(c => c && (c.status || c.erro));
+    const err = new Error(ultima && ultima.erro ? ultima.erro : "rede");
     err.rede = true;
+    err.status = ultima && ultima.status ? ultima.status : 0;
+    fim([], err.message);
     throw err;
   }
   const ordenados = filtrarRuidos(ordenarEnderecos(achados, texto, op.bias), texto);
@@ -582,9 +642,24 @@ function pintarSugestoes(lista, itens, recente, aoEscolher) {
     };
     lista.append(item);
   });
+  if (itens.length) mostrarEstadoBusca(lista, "Escolha um endereço");
+}
+
+function mostrarEstadoBusca(lista, texto) {
+  if (lista) lista.classList.add("ativa");
+  const outra = lista && lista.id === "sugOrigem" ? document.getElementById("sugDestino")
+    : lista && lista.id === "sugDestino" ? document.getElementById("sugOrigem") : null;
+  if (outra) outra.classList.remove("ativa");
+  const tela = document.getElementById("telaPlano");
+  if (tela && lista && lista.id === "sugOrigem") tela.dataset.foco = "origem";
+  if (tela && lista && lista.id === "sugDestino") tela.dataset.foco = "destino";
+  const el = document.getElementById("estadoBusca");
+  if (!el || !lista || (lista.id !== "sugOrigem" && lista.id !== "sugDestino")) return;
+  el.textContent = texto || "";
 }
 
 function avisoSugestao(lista, texto, aoMarcarMapa, consulta) {
+  mostrarEstadoBusca(lista, texto);
   lista.innerHTML = "";
   const vazio = document.createElement("div");
   vazio.className = "sugestao-vazia small";
@@ -647,12 +722,13 @@ function autocompletar(input, lista, aoEscolher, aoMarcarMapa, opts) {
       res = await buscarEnderecos(t, { signal: ctrl.signal, bias: bias(), evento: evento || "" });
     } catch (e) {
       if (minha !== seq || (e && e.name === "AbortError")) return;
-      const codigo = e && e.status ? " (erro " + e.status + ")" : "";
-      avisoSugestao(lista, "Não foi possível buscar" + codigo + ". Verifique a internet e tente de novo.", aoMarcarMapa, t);
+      const codigo = e && e.status ? " (HTTP " + e.status + ")" : "";
+      const detalhe = e && e.message && e.message !== "rede" ? " " + e.message : "";
+      avisoSugestao(lista, "Erro de rede" + codigo + detalhe + ". Verifique a internet e tente de novo.", aoMarcarMapa, t);
       return;
     }
     if (minha !== seq) return;
-    if (!res.length) avisoSugestao(lista, "Nenhum endereço encontrado.", aoMarcarMapa, t);
+    if (!res.length) avisoSugestao(lista, "Nenhum resultado.", aoMarcarMapa, t);
     else pintarSugestoes(lista, res, false, e => {
       input.value = e.titulo || e.nome || "";
       input.dataset.escolhido = "1";
@@ -672,7 +748,11 @@ function autocompletar(input, lista, aoEscolher, aoMarcarMapa, opts) {
     }
     const fonte = evento === "compositionupdate" && trecho ? { type: "compositionupdate", data: trecho } : ev;
     const t = textoComposicaoCampo(input.value, fonte, compondo, trecho);
-    if (t === ultimoAgendado) return;
+    if (t === ultimoAgendado) {
+      if (t.length >= min && !lista.querySelector(".sugestao, .sugestao-vazia")) avisoSugestao(lista, "Buscando…", null, "");
+      else if (t.length >= min) lista.classList.add("ativa");
+      return;
+    }
     ultimoAgendado = t;
     ultimoEvento = evento;
     clearTimeout(timer);
@@ -682,23 +762,40 @@ function autocompletar(input, lista, aoEscolher, aoMarcarMapa, opts) {
     if (t.length < min) {
       if (!t) mostrarRecentes();
       else lista.innerHTML = "";
+      if (!lista.querySelector(".sugestao")) lista.classList.remove("ativa");
+      const estado = document.getElementById("estadoBusca");
+      if (estado && (lista.id === "sugOrigem" || lista.id === "sugDestino")) estado.textContent = "";
       return;
     }
     avisoSugestao(lista, "Buscando…", null, "");
     timer = setTimeout(() => buscarAgora(t, ultimoEvento), opts.debounce == null ? BUSCA_DEBOUNCE_MS : opts.debounce);
   }
-  input.addEventListener("compositionstart", () => { compondo = true; trecho = ""; });
-  input.addEventListener("compositionupdate", ev => { compondo = true; trecho = ev && ev.data ? String(ev.data) : trecho; agendar(ev); });
-  input.addEventListener("compositionend", ev => { compondo = false; trecho = ""; agendar(ev); });
+  function marcarTocado() {
+    document.querySelectorAll("input[data-tocado='1']").forEach(el => { if (el !== input) el.dataset.tocado = ""; });
+    input.dataset.tocado = "1";
+  }
+  input.addEventListener("compositionstart", () => { compondo = true; trecho = ""; marcarTocado(); });
+  input.addEventListener("compositionupdate", ev => { compondo = true; trecho = ev && ev.data ? String(ev.data) : trecho; marcarTocado(); agendar(ev); });
+  input.addEventListener("compositionend", ev => { compondo = false; trecho = ""; marcarTocado(); agendar(ev); });
   input.addEventListener("input", agendar);
   input.addEventListener("keyup", agendar);
-  input.addEventListener("beforeinput", agendar);
+  input.addEventListener("touchstart", marcarTocado, { passive: true });
+  input.addEventListener("pointerdown", marcarTocado);
   input.addEventListener("focus", () => {
+    marcarTocado();
     if (!input.value.trim() && !trecho) mostrarRecentes();
-    clearInterval(poll);
-    poll = setInterval(() => { if (document.activeElement === input) agendar({ type: "poll" }); }, 400);
   });
-  input.addEventListener("blur", () => { clearInterval(poll); poll = null; });
+  // O Gboard às vezes não dispara input/keyup e tira o activeElement.
+  // Enquanto a tela está aberta e o campo foi tocado, o valor é lido a cada 400 ms.
+  poll = setInterval(() => {
+    const tela = document.getElementById("telaPlano");
+    const pino = document.getElementById("telaPino");
+    const noPlano = tela && !tela.classList.contains("hidden") && tela.contains(input);
+    const noPino = pino && !pino.classList.contains("hidden") && pino.contains(input);
+    if (!noPlano && !noPino) return;
+    if (input.dataset.tocado !== "1" && document.activeElement !== input) return;
+    agendar({ type: "poll" });
+  }, 400);
   input._ejaRecentes = mostrarRecentes;
 }
 

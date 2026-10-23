@@ -207,9 +207,7 @@ function focarCampoPlano(lado) {
   if (tela) tela.dataset.foco = lado;
   const outra = $(lado === "origem" ? "sugDestino" : "sugOrigem");
   if (outra && document.activeElement === $(lado)) outra.innerHTML = "";
-  const campo = $(lado);
-  if (campo && campo.value) setTimeout(() => { try { campo.select(); } catch (e) {} }, 0);
-  encaixarBusca(campo);
+  encaixarBusca($(lado));
 }
 // max-height da lista = visualViewport até o fim, menos a base da caixa.
 // Valor estranho (NaN, negativo, minúsculo ou enorme) cai em 220px. A caixa não é tocada.
@@ -218,8 +216,8 @@ function alturaListaSugestoes(caixa) {
   const vv = window.visualViewport;
   const fundo = vv ? vv.offsetTop + vv.height : window.innerHeight;
   const h = Math.floor(fundo - base - 8);
-  if (h >= 96 && h <= 480) return h;
-  return 220;
+  if (h >= 140 && h <= 560) return h;
+  return 280;
 }
 function encaixarBusca(el) {
   const tela = $("telaPlano");
@@ -237,6 +235,7 @@ function formatarDebugBusca(d) {
   const linhas = [];
   linhas.push("consulta: " + (d.consulta || ""));
   linhas.push("evento: " + (d.evento || "?"));
+  linhas.push("via: " + (d.transporte || "?"));
   linhas.push("viés usado: " + (d.biasUsado || "") + (d.gpsIgnorado ? "  (GPS fora, ignorado " + d.biasRecebido + ")" : ""));
   if (d.origemPagina) linhas.push("página: " + d.origemPagina + (d.online === false ? "  offline" : "  online"));
   (d.chamadas || []).forEach(c => {

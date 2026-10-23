@@ -5,7 +5,7 @@
   "backgroundColor": "#0b0b0b",
   "android": {
     "backgroundColor": "#0b0b0b",
-    "appendUserAgent": "E-Ja/1.9 (+https://eja-site.pages.dev)"
+    "appendUserAgent": "E-Ja/1.10 (+https://eja-site.pages.dev)"
   },
   "plugins": {
     "SplashScreen": {
@@ -15,6 +15,9 @@
     "Keyboard": {
       "resize": "none",
       "resizeOnFullScreen": false
+    },
+    "CapacitorHttp": {
+      "enabled": true
     }
   }
 }

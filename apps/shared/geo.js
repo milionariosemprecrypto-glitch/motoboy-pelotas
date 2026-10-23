@@ -142,11 +142,11 @@ function lerCentro(bias) {
   if (!isFinite(lat) || !isFinite(lng)) return null;
   return [lat, lng];
 }
-// O centro da pessoa entra mesmo fora de Pelotas, para achar a rua vizinha.
-// A consulta da cidade é feita em paralelo, senão "Av Brasil" em Turuçu some.
+// O GPS só entra se estiver dentro da área. Fora dela (Turuçu, por exemplo)
+// a busca dos dois campos usa o centro de Pelotas. O GPS só preenche a retirada.
 function centroBusca(bias) {
   const c = lerCentro(bias);
-  if (c && dentroBusca(c[0], c[1])) return c;
+  if (c && dentroPelotas(c[0], c[1])) return c;
   return centroPelotas();
 }
 
@@ -237,11 +237,15 @@ function ordenarEnderecos(lista, consulta, bias) {
   }
 }
 
-function deFeature(p, lng, lat) {
-  if (lat == null || lng == null || !isFinite(lat) || !isFinite(lng)) return null;
-  if (!dentroBusca(lat, lng)) return null;
+function deFeature(p, lng, lat, descartes) {
+  function drop(msg) {
+    if (descartes) descartes.push(msg);
+    return null;
+  }
+  if (lat == null || lng == null || !isFinite(lat) || !isFinite(lng)) return drop("sem coordenada");
+  if (!dentroBusca(lat, lng)) return drop("fora da busca " + Number(lat).toFixed(3) + "," + Number(lng).toFixed(3) + " " + ((p && (p.city || p.name)) || ""));
   const amig = rotuloAmigavel(p);
-  if (!amig.nome) return null;
+  if (!amig.nome) return drop("sem nome");
   const fora = !dentroPelotas(lat, lng);
   return {
     nome: amig.nome,
@@ -268,8 +272,69 @@ function opcoesBusca(arg) {
     buscar: o.buscar || (typeof fetch === "function" ? fetch : null),
     signal: o.signal || null,
     bias: o.bias || null,
+    evento: o.evento || "",
+    diag: null,
     _retry: !!o._retry
   };
+}
+
+const BUSCA_TIMEOUT_MS = 8000;
+
+function publicarDebug(diag) {
+  const g = typeof window !== "undefined" ? window : null;
+  if (!g || !diag) return;
+  g.__ejaUltimaBusca = diag;
+  if (typeof g.registrarDebugBusca === "function") {
+    try { g.registrarDebugBusca(diag); } catch (e) {}
+  }
+}
+
+async function buscarUmaVez(op, url, ms, comSignal) {
+  const ctrl = comSignal && typeof AbortController === "function" ? new AbortController() : null;
+  const onAbort = () => { if (ctrl) ctrl.abort(); };
+  if (op.signal && ctrl) {
+    if (op.signal.aborted) {
+      const e = new Error("abort");
+      e.name = "AbortError";
+      throw e;
+    }
+    op.signal.addEventListener("abort", onAbort);
+  }
+  let timer = null;
+  const limite = new Promise((_, rej) => {
+    timer = setTimeout(() => {
+      if (ctrl) ctrl.abort();
+      const err = new Error("tempo");
+      err.name = "TimeoutError";
+      err.rede = true;
+      rej(err);
+    }, ms);
+  });
+  try {
+    const init = { headers: { "Accept": "application/json" } };
+    if (ctrl) init.signal = ctrl.signal;
+    return await Promise.race([op.buscar(url, init), limite]);
+  } catch (e) {
+    if (e && e.name === "TimeoutError") throw e;
+    if (e && e.name === "AbortError") throw e;
+    const err = e instanceof Error ? e : new Error(String(e || "falha"));
+    err.rede = true;
+    throw err;
+  } finally {
+    clearTimeout(timer);
+    if (op.signal && ctrl) op.signal.removeEventListener("abort", onAbort);
+  }
+}
+
+// Alguns WebViews falham o fetch quando ele vai com AbortSignal. A segunda tentativa vai sem signal.
+async function buscarComTempo(op, url, ms) {
+  try {
+    return await buscarUmaVez(op, url, ms, true);
+  } catch (e) {
+    if (!e || e.name === "AbortError" || e.name === "TimeoutError") throw e;
+    if (abortado(op.signal)) throw e;
+    return await buscarUmaVez(op, url, ms, false);
+  }
 }
 
 function abortado(signal) {
@@ -281,20 +346,34 @@ async function photonEnderecos(q, op, comBbox) {
   let url = "https://photon.komoot.io/api/?limit=8&lang=default&lat=" + centro[0] + "&lon=" + centro[1] +
     "&q=" + encodeURIComponent(q);
   if (comBbox) url += "&bbox=" + bboxBusca().join(",");
-  const init = {};
-  if (op.signal) init.signal = op.signal;
-  const r = await op.buscar(url, init);
-  if (!r || !r.ok) {
-    const err = new Error("photon");
-    err.rede = true;
-    err.status = r && r.status;
-    throw err;
+  const chamada = { fonte: "photon", url: url, status: 0, erro: "", brutos: 0, depois: 0, descartes: [] };
+  if (op.diag) op.diag.chamadas.push(chamada);
+  let json;
+  try {
+    const r = await buscarComTempo(op, url, BUSCA_TIMEOUT_MS);
+    chamada.status = r && r.status ? r.status : 0;
+    if (!r || !r.ok) {
+      chamada.erro = !r ? "sem resposta" : ("HTTP " + r.status);
+      const err = new Error("photon");
+      err.rede = true;
+      err.status = chamada.status;
+      throw err;
+    }
+    json = typeof r.json === "function" ? await r.json() : r;
+  } catch (e) {
+    if (!chamada.erro) chamada.erro = e && e.name === "TimeoutError" ? "tempo esgotado (8s)" : ((e && (e.message || e.name)) || "falha");
+    throw e;
   }
-  const j = typeof r.json === "function" ? await r.json() : r;
-  return ((j && j.features) || []).map(f => {
+  const features = (json && json.features) || [];
+  chamada.brutos = features.length;
+  const itens = [];
+  features.forEach(f => {
     const c = (f.geometry && f.geometry.coordinates) || [];
-    return deFeature(f.properties || {}, c[0], c[1]);
-  }).filter(Boolean);
+    const item = deFeature(f.properties || {}, c[0], c[1], chamada.descartes);
+    if (item) itens.push(item);
+  });
+  chamada.depois = itens.length;
+  return itens;
 }
 
 async function nominatimEnderecos(q, op) {
@@ -322,39 +401,81 @@ async function nominatimEnderecos(q, op) {
     "format=jsonv2&addressdetails=1&limit=6&countrycodes=br&bounded=0" +
     "&viewbox=" + [o, n, l, s].join(",") +
     "&q=" + encodeURIComponent(q + ", Pelotas, Rio Grande do Sul, Brasil");
-  const init = { headers: { "Accept": "application/json" } };
-  if (op.signal) init.signal = op.signal;
-  const r = await op.buscar(url, init);
-  if (!r || !r.ok) {
-    const err = new Error("nominatim");
-    err.rede = true;
-    err.status = r && r.status;
-    throw err;
+  const chamada = { fonte: "nominatim", url: url, status: 0, erro: "", brutos: 0, depois: 0, descartes: [] };
+  if (op.diag) op.diag.chamadas.push(chamada);
+  let j;
+  try {
+    const r = await buscarComTempo(op, url, BUSCA_TIMEOUT_MS);
+    chamada.status = r && r.status ? r.status : 0;
+    if (!r || !r.ok) {
+      chamada.erro = !r ? "sem resposta" : ("HTTP " + r.status);
+      const err = new Error("nominatim");
+      err.rede = true;
+      err.status = chamada.status;
+      throw err;
+    }
+    j = typeof r.json === "function" ? await r.json() : r;
+  } catch (e) {
+    if (!chamada.erro) chamada.erro = e && e.name === "TimeoutError" ? "tempo esgotado (8s)" : ((e && (e.message || e.name)) || "falha");
+    throw e;
   }
-  const j = typeof r.json === "function" ? await r.json() : r;
-  return (j || []).map(item => deFeature({
-    name: item.name || "",
-    street: item.address && (item.address.road || item.address.pedestrian),
-    district: item.address && (item.address.suburb || item.address.neighbourhood),
-    city: item.address && (item.address.city || item.address.town),
-    state: item.address && item.address.state,
-    postcode: item.address && item.address.postcode,
-    housenumber: item.address && item.address.house_number,
-    osm_key: item.class,
-    osm_value: item.type,
-    address: item.address
-  }, Number(item.lon), Number(item.lat))).filter(Boolean);
+  const linhas = j || [];
+  chamada.brutos = linhas.length;
+  const itens = [];
+  linhas.forEach(item => {
+    const e = deFeature({
+      name: item.name || "",
+      street: item.address && (item.address.road || item.address.pedestrian),
+      district: item.address && (item.address.suburb || item.address.neighbourhood),
+      city: item.address && (item.address.city || item.address.town),
+      state: item.address && item.address.state,
+      postcode: item.address && item.address.postcode,
+      housenumber: item.address && item.address.house_number,
+      osm_key: item.class,
+      osm_value: item.type,
+      address: item.address
+    }, Number(item.lon), Number(item.lat), chamada.descartes);
+    if (e) itens.push(e);
+  });
+  chamada.depois = itens.length;
+  return itens;
+}
+
+function temNaArea(lista) {
+  return (lista || []).some(e => e && !e.fora);
 }
 
 // Não cola "Pelotas" na consulta do Photon: "Av Brasil Pelotas" passa a achar o aeroporto
-// e some com a Avenida Brasil. O recorte é o bbox + a preferência por quem está pedindo.
+// e some com a Avenida Brasil. O recorte é o bbox. O viés é Pelotas, nunca um GPS de fora.
 async function buscarEnderecos(texto, buscarOuOpts) {
   const op = opcoesBusca(buscarOuOpts);
-  if (!op.buscar) return [];
+  const recebido = lerCentro(op.bias);
+  const usado = centroBusca(op.bias);
+  op.bias = usado;
+  const diag = {
+    consulta: String(texto || ""),
+    evento: op.evento || "",
+    biasRecebido: recebido ? recebido[0].toFixed(5) + "," + recebido[1].toFixed(5) : "(nenhum)",
+    biasUsado: usado[0].toFixed(5) + "," + usado[1].toFixed(5),
+    gpsIgnorado: !!(recebido && (Math.abs(recebido[0] - usado[0]) > 0.01 || Math.abs(recebido[1] - usado[1]) > 0.01)),
+    chamadas: [],
+    naLista: 0,
+    erro: ""
+  };
+  op.diag = diag;
+  try { if (typeof location !== "undefined" && location.origin) diag.origemPagina = location.origin; } catch (e) {}
+  try { if (typeof navigator !== "undefined") diag.online = navigator.onLine; } catch (e) {}
+  function fim(lista, erro) {
+    diag.naLista = lista ? lista.length : 0;
+    if (erro) diag.erro = erro;
+    publicarDebug(diag);
+    return lista || [];
+  }
+  if (!op.buscar) return fim([], "sem fetch");
   const sep = separarNumero(texto);
   const consultas = consultasEndereco(texto);
-  if (!consultas.length) return [];
-  if (abortado(op.signal)) return [];
+  if (!consultas.length) return fim([]);
+  if (abortado(op.signal)) return fim([], "cancelada");
   const principal = consultas[0];
   const paralelas = [principal];
   consultas.forEach(q => {
@@ -363,57 +484,44 @@ async function buscarEnderecos(texto, buscarOuOpts) {
   });
   let rede = false;
   let achados = [];
-  const centroPessoa = centroBusca(op.bias);
-  const centroCidade = centroPelotas();
-  const centros = [centroPessoa];
-  if (Math.abs(centroPessoa[0] - centroCidade[0]) > 0.02 || Math.abs(centroPessoa[1] - centroCidade[1]) > 0.02) centros.push(centroCidade);
-  const tarefas = [];
-  paralelas.forEach(q => centros.forEach(c => tarefas.push({ q: q, bias: c })));
-  const lotes = await Promise.all(tarefas.map(async t => {
-    try { return await photonEnderecos(t.q, Object.assign({}, op, { bias: t.bias }), true); }
+  for (const q of paralelas) {
+    if (temNaArea(achados) || abortado(op.signal)) break;
+    try { achados = achados.concat(await photonEnderecos(q, op, true)); }
     catch (e) {
-      if (e && e.name === "AbortError") throw e;
-      rede = true;
-      return [];
-    }
-  }));
-  achados = lotes.reduce((acc, lista) => acc.concat(lista), []);
-  if (!achados.length && !abortado(op.signal)) {
-    try { achados = await photonEnderecos(principal, op, false); }
-    catch (e) {
-      if (e && e.name === "AbortError") throw e;
+      if (e && e.name === "AbortError") { fim([], "cancelada"); throw e; }
       rede = true;
     }
   }
-  if (!achados.length && !abortado(op.signal)) {
-    const dobra = consultas.filter(q => q !== principal && semAcento(q) === semAcento(principal));
-    for (const q of dobra) {
-      try {
-        achados = await photonEnderecos(q, op, true);
-        if (achados.length) break;
-      } catch (e) {
-        if (e && e.name === "AbortError") throw e;
-        rede = true;
-      }
+  if (!temNaArea(achados) && !abortado(op.signal)) {
+    try { achados = achados.concat(await photonEnderecos(principal, op, false)); }
+    catch (e) {
+      if (e && e.name === "AbortError") { fim([], "cancelada"); throw e; }
+      rede = true;
     }
   }
-  if (!achados.length && !abortado(op.signal)) {
-    try { achados = await nominatimEnderecos(principal, op); }
+  // Photon vazio, com erro, ou só com vizinhos: Nominatim completa com Pelotas.
+  if (!temNaArea(achados) && !abortado(op.signal)) {
+    try { achados = achados.concat(await nominatimEnderecos(principal, op)); }
     catch (e) {
-      if (e && e.name === "AbortError") throw e;
+      if (e && e.name === "AbortError") { fim([], "cancelada"); throw e; }
       rede = true;
     }
   }
   if (!achados.length && rede) {
     if (!op._retry && !abortado(op.signal)) {
       await new Promise(r => setTimeout(r, 400));
-      if (!abortado(op.signal)) return buscarEnderecos(texto, Object.assign({}, buscarOuOpts && typeof buscarOuOpts === "object" ? buscarOuOpts : {}, { _retry: true }));
+      if (!abortado(op.signal)) {
+        const deNovo = Object.assign({}, buscarOuOpts && typeof buscarOuOpts === "object" ? buscarOuOpts : {}, { _retry: true, evento: op.evento });
+        return buscarEnderecos(texto, deNovo);
+      }
     }
+    fim([], "rede");
     const err = new Error("rede");
     err.rede = true;
     throw err;
   }
   const ordenados = filtrarRuidos(ordenarEnderecos(achados, texto, op.bias), texto);
+  if (achados.length > ordenados.length) diag.notaRuido = "filtro de texto removeu " + (achados.length - ordenados.length);
   const lista = deduplicarEnderecos(ordenados).slice(0, 6);
   const qRua = semAcento(expandirNomesDeRua(sep.texto));
   lista.forEach(e => {
@@ -426,7 +534,7 @@ async function buscarEnderecos(texto, buscarOuOpts) {
     e.titulo = linhas.titulo;
     e.subtitulo = linhas.subtitulo;
   });
-  return lista;
+  return fim(lista);
 }
 
 // Retorna { km, linha: [[lat,lng],...] } ou null se o OSRM falhar (o servidor então usa estimativa).
@@ -492,12 +600,27 @@ function avisoSugestao(lista, texto, aoMarcarMapa, consulta) {
   }
 }
 
+// O Gboard deixa o texto na composição e só grava input.value no fim.
+// compositionupdate traz o trecho em ev.data enquanto o value ainda está velho.
+function textoComposicaoCampo(valor, ev, compondo, trecho) {
+  let v = String(valor || "");
+  const data = ev && ev.data != null ? String(ev.data) : "";
+  const tipo = ev && ev.type || "";
+  if ((tipo === "compositionupdate" || tipo === "compositionend") && data) {
+    if (v.indexOf(data) === -1) v = (v + data).replace(/\s+/g, " ");
+  } else if (compondo && trecho && v.indexOf(trecho) === -1) {
+    v = (v + trecho).replace(/\s+/g, " ");
+  }
+  return v.trim();
+}
+
 // Liga um <input> a uma lista de sugestões. aoEscolher recebe {nome, lat, lng, numero, titulo}.
 // aoMarcarMapa(texto) abre o mapa quando a busca não acha nada ou a rede falha.
-// opts.bias() é a pessoa ou o centro do mapa; opts.recentes() aparece antes de digitar.
+// opts.bias() é a pessoa (se estiver em Pelotas) ou null. opts.recentes() aparece antes de digitar.
 function autocompletar(input, lista, aoEscolher, aoMarcarMapa, opts) {
   opts = opts || {};
-  let timer = null, ctrl = null, seq = 0;
+  let timer = null, ctrl = null, seq = 0, poll = null;
+  let compondo = false, trecho = "";
   const min = opts.minChars || 2;
   function parar() {
     if (ctrl) { try { ctrl.abort(); } catch (e) {} ctrl = null; }
@@ -514,14 +637,14 @@ function autocompletar(input, lista, aoEscolher, aoMarcarMapa, opts) {
       aoEscolher(e);
     });
   }
-  async function buscarAgora(t) {
+  async function buscarAgora(t, evento) {
     parar();
     const minha = ++seq;
     ctrl = typeof AbortController === "function" ? new AbortController() : { abort() {}, signal: undefined };
     avisoSugestao(lista, "Buscando…", null, "");
     let res = [];
     try {
-      res = await buscarEnderecos(t, { signal: ctrl.signal, bias: bias() });
+      res = await buscarEnderecos(t, { signal: ctrl.signal, bias: bias(), evento: evento || "" });
     } catch (e) {
       if (minha !== seq || (e && e.name === "AbortError")) return;
       const codigo = e && e.status ? " (erro " + e.status + ")" : "";
@@ -537,12 +660,21 @@ function autocompletar(input, lista, aoEscolher, aoMarcarMapa, opts) {
     });
   }
   let ultimoAgendado = null;
-  function agendar() {
+  let ultimoEvento = "";
+  function agendar(ev) {
     const tela = document.getElementById("telaPlano");
     if (tela && (input.id === "origem" || input.id === "destino")) tela.dataset.foco = input.id;
-    const t = input.value.trim();
+    let evento = ev && ev.type || "input";
+    if ((evento === "keyup" || evento === "input" || evento === "poll") && compondo && trecho) {
+      const cru = String(input.value || "").trim();
+      const cheio = textoComposicaoCampo(input.value, { type: "compositionupdate", data: trecho }, true, trecho);
+      if (cheio && cru !== cheio) evento = "compositionupdate";
+    }
+    const fonte = evento === "compositionupdate" && trecho ? { type: "compositionupdate", data: trecho } : ev;
+    const t = textoComposicaoCampo(input.value, fonte, compondo, trecho);
     if (t === ultimoAgendado) return;
     ultimoAgendado = t;
+    ultimoEvento = evento;
     clearTimeout(timer);
     parar();
     seq++;
@@ -553,14 +685,20 @@ function autocompletar(input, lista, aoEscolher, aoMarcarMapa, opts) {
       return;
     }
     avisoSugestao(lista, "Buscando…", null, "");
-    timer = setTimeout(() => buscarAgora(t), opts.debounce == null ? BUSCA_DEBOUNCE_MS : opts.debounce);
+    timer = setTimeout(() => buscarAgora(t, ultimoEvento), opts.debounce == null ? BUSCA_DEBOUNCE_MS : opts.debounce);
   }
+  input.addEventListener("compositionstart", () => { compondo = true; trecho = ""; });
+  input.addEventListener("compositionupdate", ev => { compondo = true; trecho = ev && ev.data ? String(ev.data) : trecho; agendar(ev); });
+  input.addEventListener("compositionend", ev => { compondo = false; trecho = ""; agendar(ev); });
   input.addEventListener("input", agendar);
   input.addEventListener("keyup", agendar);
-  input.addEventListener("compositionend", agendar);
+  input.addEventListener("beforeinput", agendar);
   input.addEventListener("focus", () => {
-    if (!input.value.trim()) mostrarRecentes();
+    if (!input.value.trim() && !trecho) mostrarRecentes();
+    clearInterval(poll);
+    poll = setInterval(() => { if (document.activeElement === input) agendar({ type: "poll" }); }, 400);
   });
+  input.addEventListener("blur", () => { clearInterval(poll); poll = null; });
   input._ejaRecentes = mostrarRecentes;
 }
 

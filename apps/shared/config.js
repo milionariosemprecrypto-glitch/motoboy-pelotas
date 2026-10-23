@@ -33,6 +33,6 @@ const TILES_ATTR = '© <a href="https://www.openstreetmap.org/copyright">OpenStr
 const COR = { laranja: "#ff6a00", branco: "#f5f5f5", verde: "#2ecc71" };
 // Site público com os documentos legais e a página de exclusão de conta
 const SITE = "https://eja-site.pages.dev";
-const APP_VERSAO = "1.8";
+const APP_VERSAO = "1.9";
 const LINK_DOC = { termos_cliente: SITE + "/termos/", termos_motoboy: SITE + "/termos-motoboy/", privacidade: SITE + "/privacidade/" };
 const NOME_DOC = { termos_cliente: "Termos de Uso", termos_motoboy: "Termos do Motoboy Parceiro", privacidade: "Política de Privacidade" };

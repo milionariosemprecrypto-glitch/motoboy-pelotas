@@ -232,11 +232,47 @@ function encaixarBusca(el) {
   if (lista) lista.style.maxHeight = alturaListaSugestoes(caixa) + "px";
   limitarSugestaoPino();
 }
+function formatarDebugBusca(d) {
+  if (!d) return "Nenhuma busca ainda.\nDigite a retirada ou a entrega.\nGPS fora de Pelotas não entra na busca.";
+  const linhas = [];
+  linhas.push("consulta: " + (d.consulta || ""));
+  linhas.push("evento: " + (d.evento || "?"));
+  linhas.push("viés usado: " + (d.biasUsado || "") + (d.gpsIgnorado ? "  (GPS fora, ignorado " + d.biasRecebido + ")" : ""));
+  if (d.origemPagina) linhas.push("página: " + d.origemPagina + (d.online === false ? "  offline" : "  online"));
+  (d.chamadas || []).forEach(c => {
+    linhas.push("");
+    linhas.push((c.fonte || "rede") + "  " + (c.erro || ("HTTP " + c.status)));
+    linhas.push(c.url || "");
+    linhas.push("brutos: " + c.brutos + "   depois do filtro: " + c.depois);
+    if (c.descartes && c.descartes.length) linhas.push("descartes: " + c.descartes.slice(0, 6).join(" | "));
+  });
+  if (d.notaRuido) linhas.push(d.notaRuido);
+  linhas.push("na lista: " + (d.naLista != null ? d.naLista : "?"));
+  if (d.erro) linhas.push("erro: " + d.erro);
+  linhas.push("Toque de novo em v" + APP_VERSAO + " para fechar.");
+  return linhas.join("\n");
+}
+function pintarPainelDebug() {
+  const painel = $("painelDebugBusca");
+  if (!painel || painel.classList.contains("hidden")) return;
+  painel.textContent = formatarDebugBusca(window.__ejaUltimaBusca);
+}
+window.registrarDebugBusca = function () { pintarPainelDebug(); };
 function marcarVersaoDebug() {
   const el = $("planoDebug");
   if (!el) return;
   el.textContent = "v" + APP_VERSAO;
-  el.classList.toggle("hidden", !document.documentElement.classList.contains("eja-debug"));
+  const debug = document.documentElement.classList.contains("eja-debug");
+  el.classList.toggle("hidden", !debug);
+  if (!el.dataset.ligado) {
+    el.dataset.ligado = "1";
+    el.addEventListener("click", () => {
+      const painel = $("painelDebugBusca");
+      if (!painel) return;
+      painel.classList.toggle("hidden");
+      pintarPainelDebug();
+    });
+  }
 }
 document.addEventListener("eja-insets", marcarVersaoDebug);
 function limitarSugestaoPino() {
@@ -249,6 +285,7 @@ function limitarSugestaoPino() {
 }
 window.encaixarBusca = encaixarBusca;
 function biasBusca() {
+  // Manda a posição para o diagnóstico. geo.js só usa o GPS se ele estiver em Pelotas.
   if (aqui && isFinite(aqui.lat) && isFinite(aqui.lng)) return [aqui.lat, aqui.lng];
   return null;
 }

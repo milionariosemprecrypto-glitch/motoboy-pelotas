@@ -219,7 +219,9 @@ const semCidade = await run(`(async () => {
 assert.equal(semCidade, 1, "coordenada dentro de Pelotas não some só porque a cidade veio vazia");
 
 const turucu = await run(`(async () => {
+  const urls = [];
   const buscar = async (url) => {
+    urls.push(String(url));
     if (String(url).includes("nominatim")) return { ok: true, json: async () => [] };
     return { ok: true, json: async () => ({ features: [{
       geometry: { coordinates: [-52.18, -31.417] },
@@ -227,10 +229,12 @@ const turucu = await run(`(async () => {
     }] }) };
   };
   const lista = await buscarEnderecos("Rua Reinaldo", { buscar, bias: [-31.417, -52.18] });
-  return { n: lista.length, fora: lista[0] && lista[0].fora, aviso: lista[0] && lista[0].fora ? textoFora() : "" };
+  return { n: lista.length, fora: lista[0] && lista[0].fora, aviso: lista[0] && lista[0].fora ? textoFora() : "", urls };
 })()`);
 assert.equal(turucu.n, 1, "resultado de Turuçu aparece");
 assert.equal(turucu.fora, true);
 assert.match(turucu.aviso, /Fora da área de entrega \(Pelotas\)/);
+assert.ok(turucu.urls.some(u => /photon/.test(u) && /lat=-31\.7719/.test(u) && !/lat=-31\.417/.test(u)), "GPS em Turuçu não entra na URL; o viés é o centro de Pelotas");
+assert.equal(run(`textoComposicaoCampo("", { type: "compositionupdate", data: "Av Brasil" }, true, "Av Brasil")`), "Av Brasil");
 
 console.log("logica_test: ok");

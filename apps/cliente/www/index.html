@@ -123,10 +123,11 @@
     <div class="plano-topo">
       <button class="voltar" onclick="fecharPlano()">←</button>
       <h2>Planeje sua entrega</h2>
-      <span id="planoDebug" class="plano-debug hidden"></span>
+      <button type="button" id="planoDebug" class="plano-debug hidden" aria-label="Abrir diagnóstico da busca"></button>
     </div>
     <div class="plano-rolagem">
     <p id="avisoAreaPlano" class="aviso-area hidden"></p>
+    <pre id="painelDebugBusca" class="painel-debug hidden"></pre>
     <div class="caixa-rota">
       <div class="trilho"><i class="t-a"></i><i class="t-linha"></i><i class="t-b"></i></div>
       <div class="campos">

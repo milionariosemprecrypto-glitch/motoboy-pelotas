@@ -14,7 +14,10 @@ html.plano-aberto, html.plano-aberto body { overflow:hidden; }
   display:block; overflow:hidden; padding:28px 16px 0; background:#fff; }
 #telaPlano .plano-topo { height:48px; flex:none; overflow:hidden; }
 #telaPlano .plano-topo h2 { white-space:nowrap; }
-#telaPlano .plano-debug { margin-left:auto; font:600 11px Poppins, sans-serif; color:#9ca3af; }
+#telaPlano .plano-debug { margin-left:auto; border:0; background:transparent; padding:8px 4px; font:600 11px Poppins, sans-serif; color:#9ca3af; }
+.painel-debug { position:fixed; z-index:4500; left:10px; right:10px; bottom:12px; max-height:46vh; overflow:auto;
+  margin:0; padding:12px; border-radius:12px; background:#111; color:#d1fae5; white-space:pre-wrap; word-break:break-word;
+  font:11px/1.4 ui-monospace, monospace; box-shadow:0 8px 28px #0008; }
 #telaPlano .plano-rolagem { display:block; height:auto; min-height:0; overflow:visible; }
 #telaPlano .caixa-rota { flex:none !important; height:144px !important; min-height:144px !important; max-height:144px !important;
   box-sizing:border-box; align-items:center; overflow:hidden; }

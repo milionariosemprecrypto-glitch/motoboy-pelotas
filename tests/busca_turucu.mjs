@@ -57,12 +57,17 @@ try {
   const origem = await page.$eval("#origem", el => ({ valor: el.value, escolhido: el.dataset.escolhido }));
   ok(/Arthur Lange|Minha localização/.test(origem.valor) && origem.escolhido !== "1", "origem mostra o lugar e não confirma fora da área");
 
-  async function digitar(texto) {
-    await page.evaluate(async (texto) => {
+  async function digitar(texto, modo) {
+    await page.evaluate(async (texto, modo) => {
       const campo = document.getElementById("destino");
       campo.focus();
-      campo.value = texto;
-      campo.dispatchEvent(new Event("input", { bubbles: true }));
+      campo.value = modo === "gboard" ? "" : texto;
+      if (modo === "gboard") {
+        campo.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
+        campo.dispatchEvent(new CompositionEvent("compositionupdate", { data: texto, bubbles: true }));
+      } else {
+        campo.dispatchEvent(new Event("input", { bubbles: true }));
+      }
       const lista = document.getElementById("sugDestino");
       const fim = Date.now() + 12000;
       while (Date.now() < fim) {
@@ -70,7 +75,7 @@ try {
         if (t && !/^Buscando/.test(t)) return;
         await new Promise(r => setTimeout(r, 150));
       }
-    }, texto);
+    }, texto, modo || "");
     return page.evaluate(() => {
       const lista = document.getElementById("sugDestino");
       const itens = [...lista.querySelectorAll("button.sugestao")].map(b => ({
@@ -82,11 +87,15 @@ try {
     });
   }
 
-  const brasil = await digitar("Av Brasil");
-  console.log("brasil", JSON.stringify(brasil).slice(0, 500));
+  const brasil = await digitar("Av Brasil", "gboard");
+  console.log("brasil", JSON.stringify(brasil).slice(0, 700));
   ok(brasil.foco === "destino", "a lista do destino fica visível ao digitar");
-  ok(brasil.itens.some(i => /Avenida Brasil/.test(i.titulo) && !i.fora), "Avenida Brasil em Pelotas aparece e pode confirmar");
-  ok(brasil.itens.some(i => i.fora && /Fora da área de entrega/.test(i.aviso)), "vizinho fora da área aparece em cinza com o aviso");
+  ok(brasil.itens.some(i => /Avenida Brasil/.test(i.titulo) && !i.fora), "Gboard sem input event acha Avenida Brasil em Pelotas");
+  await page.click("#planoDebug");
+  const painel = await page.$eval("#painelDebugBusca", el => ({ oculto: el.classList.contains("hidden"), texto: el.textContent }));
+  ok(!painel.oculto && /lat=-31\.7719/.test(painel.texto) && !/lat=-31\.417/.test(painel.texto), "painel mostra a URL no centro de Pelotas, sem o GPS de Turuçu");
+  ok(/compositionupdate/.test(painel.texto), "painel registra o evento do Gboard");
+  console.log("painel", painel.texto.slice(0, 500));
   await page.screenshot({ path: DIR + "/busca-turucu-av-brasil.png" });
 
   const xv = await digitar("Rua XV de Novembro");

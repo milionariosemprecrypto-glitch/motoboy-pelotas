@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#ffffff">
 <title>É-Já</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
-<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+<link rel="stylesheet" href="shared/vendor/maplibre-gl.css">
 <link rel="stylesheet" href="shared/style.css">
 <link rel="stylesheet" href="cliente.css">
 </head>
@@ -66,6 +66,7 @@
       <b>Bem-vindo ao É-Já! 🧡</b>
       <span>Sua primeira entrega está a 3 toques: escolha o destino, veja o preço e confirme.</span>
     </div>
+    <p id="avisoAreaHome" class="aviso-area hidden"></p>
     <div class="busca-pill">
       <button id="pillParaOnde" class="busca-btn" onclick="abrirPlano()"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/></svg>Para onde?</button>
       <button class="mais-tarde" onclick="maisTarde()"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/></svg>Mais tarde</button>
@@ -125,6 +126,7 @@
       <span id="planoDebug" class="plano-debug hidden"></span>
     </div>
     <div class="plano-rolagem">
+    <p id="avisoAreaPlano" class="aviso-area hidden"></p>
     <div class="caixa-rota">
       <div class="trilho"><i class="t-a"></i><i class="t-linha"></i><i class="t-b"></i></div>
       <div class="campos">
@@ -185,7 +187,7 @@
         <h2 class="centro">Marque no mapa</h2>
         <p class="small centro">Arraste o mapa. O pino marca o ponto.</p>
         <div class="campo-falso" id="pinoNome">Para onde?</div>
-        <p id="pinoFora" class="small erro hidden">Fora de Pelotas. Escolha um ponto na cidade.</p>
+        <p id="pinoFora" class="small erro hidden">Fora da área de entrega (Pelotas) — distância não permitida.</p>
         <button id="btnPino" class="btn-preto" type="button" onclick="confirmarPino()" disabled>Confirmar este ponto</button>
       </div>
     </div>
@@ -247,7 +249,7 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script src="shared/vendor/maplibre-gl-csp.js"></script>
 <script src="https://unpkg.com/@maplibre/maplibre-gl-leaflet@0.0.22/leaflet-maplibre-gl.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="shared/config.js"></script>

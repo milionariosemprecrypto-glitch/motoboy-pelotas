@@ -1,16 +1,34 @@
 // Busca de endereços (Photon/OSM, com Nominatim se o Photon vier vazio) e rota de rua (OSRM).
 // ATENÇÃO: os servidores públicos gratuitos têm limite de uso e não garantem disponibilidade.
-// Nominatim: no máximo 1 consulta por segundo e User-Agent identificando o app (política de uso).
-// BBox do município inteiro (oeste, sul, leste, norte): Centro, Fragata, Areal, Três Vendas, Laranjal e a zona rural.
-const PELOTAS_BBOX = [-52.63, -31.82, -51.99, -31.30];
+// Nominatim: no máximo 1 consulta por segundo. O User-Agent do WebView já identifica o app;
+// o header User-Agent no fetch é proibido e faz o pedido falhar.
+// A área que confirma é AREA_ENTREGA (config.js). A busca mostra um retângulo maior em volta.
+const MARGEM_BUSCA = 0.45;
 const NOMINATIM_INTERVALO_MS = 1100;
 const BUSCA_DEBOUNCE_MS = 160;
 let nominatimLivreEm = 0;
 
-function dentroPelotas(lat, lng) {
+function bboxEntrega() {
+  if (typeof AREA_ENTREGA !== "undefined" && AREA_ENTREGA && AREA_ENTREGA.bbox && AREA_ENTREGA.bbox.length === 4) return AREA_ENTREGA.bbox;
+  return [-52.60, -31.96, -52.02, -31.50];
+}
+const PELOTAS_BBOX = bboxEntrega();
+function nomeArea() {
+  return (typeof AREA_ENTREGA !== "undefined" && AREA_ENTREGA && AREA_ENTREGA.nome) || "Pelotas";
+}
+function textoFora() {
+  return "Fora da área de entrega (" + nomeArea() + ") — distância não permitida";
+}
+function bboxBusca() {
   const [o, s, l, n] = PELOTAS_BBOX;
+  return [o - MARGEM_BUSCA, s - MARGEM_BUSCA, l + MARGEM_BUSCA, n + MARGEM_BUSCA];
+}
+function dentroCaixa(lat, lng, caixa) {
+  const [o, s, l, n] = caixa;
   return lng >= o && lng <= l && lat >= s && lat <= n;
 }
+function dentroPelotas(lat, lng) { return dentroCaixa(lat, lng, PELOTAS_BBOX); }
+function dentroBusca(lat, lng) { return dentroCaixa(lat, lng, bboxBusca()); }
 
 function semAcento(s) {
   return String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
@@ -114,10 +132,22 @@ function cidadePelotas(p) {
   return texto.indexOf("pelotas") >= 0;
 }
 
-function centroBusca(bias) {
-  if (bias && isFinite(bias.lat) && isFinite(bias.lng) && dentroPelotas(bias.lat, bias.lng)) return [bias.lat, bias.lng];
-  if (bias && isFinite(bias[0]) && isFinite(bias[1]) && dentroPelotas(bias[0], bias[1])) return [bias[0], bias[1]];
+function centroPelotas() {
   return (typeof PELOTAS !== "undefined" && PELOTAS) || [-31.7719, -52.3426];
+}
+function lerCentro(bias) {
+  if (!bias) return null;
+  const lat = isFinite(bias.lat) ? Number(bias.lat) : Number(bias[0]);
+  const lng = isFinite(bias.lng) ? Number(bias.lng) : Number(bias[1]);
+  if (!isFinite(lat) || !isFinite(lng)) return null;
+  return [lat, lng];
+}
+// O centro da pessoa entra mesmo fora de Pelotas, para achar a rua vizinha.
+// A consulta da cidade é feita em paralelo, senão "Av Brasil" em Turuçu some.
+function centroBusca(bias) {
+  const c = lerCentro(bias);
+  if (c && dentroBusca(c[0], c[1])) return c;
+  return centroPelotas();
 }
 
 function distMetros(lat, lng, centro) {
@@ -198,6 +228,7 @@ function ordenarEnderecos(lista, consulta, bias) {
       if (extra) s -= Math.min(48, extra.split(/\s+/).filter(Boolean).length * 14);
     }
     tokens.forEach(t => { if (n.indexOf(t) >= 0) s += 12; });
+    if (!e.fora) s += 80;
     if (e.tipo === "rua" && ruaPedida) s += 28;
     if (e.tipo === "poi" && !ruaPedida) s += 18;
     if (e.osmValue === "bus_station" && /estac|rodoviar|terminal/.test(q)) s += 70;
@@ -208,9 +239,10 @@ function ordenarEnderecos(lista, consulta, bias) {
 
 function deFeature(p, lng, lat) {
   if (lat == null || lng == null || !isFinite(lat) || !isFinite(lng)) return null;
-  if (!dentroPelotas(lat, lng) || !cidadePelotas(p)) return null;
+  if (!dentroBusca(lat, lng)) return null;
   const amig = rotuloAmigavel(p);
   if (!amig.nome) return null;
+  const fora = !dentroPelotas(lat, lng);
   return {
     nome: amig.nome,
     tipo: amig.tipo,
@@ -223,6 +255,7 @@ function deFeature(p, lng, lat) {
     complemento: "",
     lat: Number(lat),
     lng: Number(lng),
+    fora: fora,
     osmKey: p.osm_key || p.class || "",
     osmValue: p.osm_value || p.type || ""
   };
@@ -234,7 +267,8 @@ function opcoesBusca(arg) {
   return {
     buscar: o.buscar || (typeof fetch === "function" ? fetch : null),
     signal: o.signal || null,
-    bias: o.bias || null
+    bias: o.bias || null,
+    _retry: !!o._retry
   };
 }
 
@@ -246,11 +280,16 @@ async function photonEnderecos(q, op, comBbox) {
   const centro = centroBusca(op.bias);
   let url = "https://photon.komoot.io/api/?limit=8&lang=default&lat=" + centro[0] + "&lon=" + centro[1] +
     "&q=" + encodeURIComponent(q);
-  if (comBbox) url += "&bbox=" + PELOTAS_BBOX.join(",");
+  if (comBbox) url += "&bbox=" + bboxBusca().join(",");
   const init = {};
   if (op.signal) init.signal = op.signal;
   const r = await op.buscar(url, init);
-  if (!r || !r.ok) return [];
+  if (!r || !r.ok) {
+    const err = new Error("photon");
+    err.rede = true;
+    err.status = r && r.status;
+    throw err;
+  }
   const j = typeof r.json === "function" ? await r.json() : r;
   return ((j && j.features) || []).map(f => {
     const c = (f.geometry && f.geometry.coordinates) || [];
@@ -278,20 +317,20 @@ async function nominatimEnderecos(q, op) {
     throw e;
   }
   nominatimLivreEm = Date.now() + NOMINATIM_INTERVALO_MS;
-  const [o, s, l, n] = PELOTAS_BBOX;
+  const [o, s, l, n] = bboxBusca();
   const url = "https://nominatim.openstreetmap.org/search?" +
     "format=jsonv2&addressdetails=1&limit=6&countrycodes=br&bounded=0" +
     "&viewbox=" + [o, n, l, s].join(",") +
     "&q=" + encodeURIComponent(q + ", Pelotas, Rio Grande do Sul, Brasil");
-  const init = {
-    headers: {
-      "Accept": "application/json",
-      "User-Agent": "E-Ja/1.3 (entrega em Pelotas; +https://eja-site.pages.dev)"
-    }
-  };
+  const init = { headers: { "Accept": "application/json" } };
   if (op.signal) init.signal = op.signal;
   const r = await op.buscar(url, init);
-  if (!r || !r.ok) return [];
+  if (!r || !r.ok) {
+    const err = new Error("nominatim");
+    err.rede = true;
+    err.status = r && r.status;
+    throw err;
+  }
   const j = typeof r.json === "function" ? await r.json() : r;
   return (j || []).map(item => deFeature({
     name: item.name || "",
@@ -324,8 +363,14 @@ async function buscarEnderecos(texto, buscarOuOpts) {
   });
   let rede = false;
   let achados = [];
-  const lotes = await Promise.all(paralelas.map(async q => {
-    try { return await photonEnderecos(q, op, true); }
+  const centroPessoa = centroBusca(op.bias);
+  const centroCidade = centroPelotas();
+  const centros = [centroPessoa];
+  if (Math.abs(centroPessoa[0] - centroCidade[0]) > 0.02 || Math.abs(centroPessoa[1] - centroCidade[1]) > 0.02) centros.push(centroCidade);
+  const tarefas = [];
+  paralelas.forEach(q => centros.forEach(c => tarefas.push({ q: q, bias: c })));
+  const lotes = await Promise.all(tarefas.map(async t => {
+    try { return await photonEnderecos(t.q, Object.assign({}, op, { bias: t.bias }), true); }
     catch (e) {
       if (e && e.name === "AbortError") throw e;
       rede = true;
@@ -360,6 +405,10 @@ async function buscarEnderecos(texto, buscarOuOpts) {
     }
   }
   if (!achados.length && rede) {
+    if (!op._retry && !abortado(op.signal)) {
+      await new Promise(r => setTimeout(r, 400));
+      if (!abortado(op.signal)) return buscarEnderecos(texto, Object.assign({}, buscarOuOpts && typeof buscarOuOpts === "object" ? buscarOuOpts : {}, { _retry: true }));
+    }
     const err = new Error("rede");
     err.rede = true;
     throw err;
@@ -409,8 +458,17 @@ function pintarSugestoes(lista, itens, recente, aoEscolher) {
     item.innerHTML = '<i class="sug-ico">' + ICONE_SUGESTAO[icone] + '</i><span class="sug-txt"><b></b><span></span></span>';
     const linhas = e.titulo ? { titulo: e.titulo, subtitulo: e.subtitulo || "" } : linhasEndereco(e);
     item.querySelector("b").textContent = linhas.titulo || e.nome || "";
-    item.querySelector(".sug-txt span").textContent = linhas.subtitulo || "Pelotas - RS";
+    if (e.fora) {
+      item.classList.add("fora");
+      item.setAttribute("aria-disabled", "true");
+      item.querySelector(".sug-txt span").textContent = textoFora();
+    } else item.querySelector(".sug-txt span").textContent = linhas.subtitulo || (nomeArea() + " - RS");
     item.onclick = () => {
+      if (e.fora) {
+        avisoSugestao(lista, textoFora(), null, "");
+        if (typeof toast === "function") toast(textoFora());
+        return;
+      }
       lista.innerHTML = "";
       aoEscolher(Object.assign({}, e, { titulo: linhas.titulo, subtitulo: linhas.subtitulo }));
     };
@@ -460,37 +518,46 @@ function autocompletar(input, lista, aoEscolher, aoMarcarMapa, opts) {
     parar();
     const minha = ++seq;
     ctrl = typeof AbortController === "function" ? new AbortController() : { abort() {}, signal: undefined };
-    avisoSugestao(lista, "Buscando em Pelotas…", null, "");
+    avisoSugestao(lista, "Buscando…", null, "");
     let res = [];
     try {
       res = await buscarEnderecos(t, { signal: ctrl.signal, bias: bias() });
     } catch (e) {
       if (minha !== seq || (e && e.name === "AbortError")) return;
-      avisoSugestao(lista, "Não foi possível buscar. Tente de novo ou marque no mapa.", aoMarcarMapa, t);
+      const codigo = e && e.status ? " (erro " + e.status + ")" : "";
+      avisoSugestao(lista, "Não foi possível buscar" + codigo + ". Verifique a internet e tente de novo.", aoMarcarMapa, t);
       return;
     }
     if (minha !== seq) return;
-    if (!res.length) avisoSugestao(lista, "Nenhum endereço encontrado em Pelotas.", aoMarcarMapa, t);
+    if (!res.length) avisoSugestao(lista, "Nenhum endereço encontrado.", aoMarcarMapa, t);
     else pintarSugestoes(lista, res, false, e => {
       input.value = e.titulo || e.nome || "";
       input.dataset.escolhido = "1";
       aoEscolher(e);
     });
   }
-  input.addEventListener("input", () => {
+  let ultimoAgendado = null;
+  function agendar() {
+    const tela = document.getElementById("telaPlano");
+    if (tela && (input.id === "origem" || input.id === "destino")) tela.dataset.foco = input.id;
+    const t = input.value.trim();
+    if (t === ultimoAgendado) return;
+    ultimoAgendado = t;
     clearTimeout(timer);
     parar();
     seq++;
     input.dataset.escolhido = "";
-    const t = input.value.trim();
     if (t.length < min) {
       if (!t) mostrarRecentes();
       else lista.innerHTML = "";
       return;
     }
-    avisoSugestao(lista, "Buscando em Pelotas…", null, "");
+    avisoSugestao(lista, "Buscando…", null, "");
     timer = setTimeout(() => buscarAgora(t), opts.debounce == null ? BUSCA_DEBOUNCE_MS : opts.debounce);
-  });
+  }
+  input.addEventListener("input", agendar);
+  input.addEventListener("keyup", agendar);
+  input.addEventListener("compositionend", agendar);
   input.addEventListener("focus", () => {
     if (!input.value.trim()) mostrarRecentes();
   });
@@ -539,7 +606,7 @@ async function nomeDoPonto(lat, lng, opts) {
     if (!f) return null;
     const p = f.properties || {};
     const c = (f.geometry && f.geometry.coordinates) || [lng, lat];
-    if (!dentroPelotas(c[1], c[0])) return null;
+    if (!dentroBusca(c[1], c[0])) return null;
     const amig = rotuloAmigavel(p);
     return amig.nome || null;
   } catch { return null; }

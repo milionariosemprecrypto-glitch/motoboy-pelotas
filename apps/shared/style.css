@@ -106,6 +106,12 @@ footer { text-align:center; padding:10px 20px 28px; color:#555; font-size:11px; 
 
 /* ===== Mapa claro e suave (ambos os apps) ===== */
 .tiles-suaves { filter:grayscale(.75) brightness(1.06) contrast(.82) sepia(.08) hue-rotate(170deg) saturate(.8); }
+.mapa-estado { position:absolute; z-index:6; left:12px; right:12px; top:calc(12px + var(--safe-top)); margin:0;
+  padding:10px 12px; border-radius:12px; background:#fff; color:#111; font:600 13px/1.35 Poppins,sans-serif;
+  box-shadow:0 4px 16px #0003; pointer-events:none; }
+.sugestao.fora { opacity:.72; }
+.sugestao.fora .sug-txt span { color:#b45309; white-space:normal; }
+.aviso-area { margin:0 0 10px; padding:10px 12px; border-radius:12px; background:#fff4e8; color:#9a3412; font:600 13px/1.35 Poppins,sans-serif; }
 .leaflet-bar a { background:#fff !important; color:#111 !important; border-color:#e3e8ee !important; }
 .pin { width:30px; height:30px; border-radius:50%; display:grid; place-items:center; font:800 13px Poppins, sans-serif;
   color:#fff; border:3px solid #fff; box-shadow:0 3px 10px #0004; }

@@ -84,7 +84,24 @@ function ajustarMapa(m) {
 }
 
 const mapasVivos = new Set();
+function ligarWorkerMapa() {
+  if (!window.maplibregl || typeof maplibregl.setWorkerUrl !== "function" || window.__ejaWorker) return;
+  maplibregl.setWorkerUrl("shared/vendor/maplibre-gl-csp-worker.js");
+  window.__ejaWorker = true;
+}
+function estadoMapa(el, texto) {
+  if (!el) return;
+  let n = el.querySelector(".mapa-estado");
+  if (!texto) { if (n) n.remove(); return; }
+  if (!n) {
+    n = document.createElement("div");
+    n.className = "mapa-estado";
+    el.append(n);
+  }
+  n.textContent = texto;
+}
 function criarMapa(id, opcoes = {}) {
+  ligarWorkerMapa();
   let m;
   try {
     if (window.maplibregl && temWebGL()) m = criarMapaGL(id, opcoes);
@@ -234,6 +251,22 @@ function criarMapaGL(id, opcoes) {
     aplicado = true;
     drenar();
   }
+  estadoMapa(el, "Carregando ruas…");
+  const avisoMapa = setTimeout(() => {
+    const st = gl.getStyle && gl.getStyle();
+    const ruas = st && (st.layers || []).some(l => l.type !== "background");
+    if (!ruas) estadoMapa(el, "O mapa não carregou as ruas. Verifique a internet.");
+  }, 8000);
+  function ruasVisiveis() {
+    const st = gl.getStyle && gl.getStyle();
+    return !!(st && (st.layers || []).some(l => l.type !== "background"));
+  }
+  gl.on("idle", () => { if (ruasVisiveis()) { clearTimeout(avisoMapa); estadoMapa(el, ""); } });
+  gl.on("error", ev => {
+    const msg = ev && ev.error && ev.error.message || "";
+    if (/sprite|glyph|image|AJAXError/i.test(msg) && ruasVisiveis()) return;
+    estadoMapa(el, "O mapa não carregou as ruas." + (msg ? " " + msg : ""));
+  });
   estiloSuave().then(aplicarEstilo).catch(() => aplicarEstilo({
     version: 8,
     sources: { osm: { type: "raster", tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"], tileSize: 256, attribution: "© OpenStreetMap" } },

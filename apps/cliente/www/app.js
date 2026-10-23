@@ -79,14 +79,13 @@ function atualizarLocal(avisar) {
   }
   navigator.geolocation.getCurrentPosition(async p => {
     aqui = { lat: p.coords.latitude, lng: p.coords.longitude, numero: "S/N", complemento: "" };
-    if (!dentroPelotas(aqui.lat, aqui.lng)) {
-      $("locAtual").textContent = "Fora de Pelotas";
-      if (avisar) toast("Por enquanto atendemos só Pelotas.");
-      return;
-    }
+    const fora = !dentroPelotas(aqui.lat, aqui.lng);
     const nome = await nomeDoPonto(aqui.lat, aqui.lng, { timeout: 4000 });
     aqui.nome = nome || "Minha localização";
+    aqui.fora = fora;
     $("locAtual").textContent = aqui.nome;
+    mostrarAvisoArea(fora);
+    if (avisar && fora) toast(textoFora());
     montarLugares();
     pintarPontosAzuis();
     aplicarGpsNoPlano();
@@ -250,7 +249,7 @@ function limitarSugestaoPino() {
 }
 window.encaixarBusca = encaixarBusca;
 function biasBusca() {
-  if (aqui && dentroPelotas(aqui.lat, aqui.lng)) return [aqui.lat, aqui.lng];
+  if (aqui && isFinite(aqui.lat) && isFinite(aqui.lng)) return [aqui.lat, aqui.lng];
   return null;
 }
 function nomeCheio(e) {
@@ -298,7 +297,9 @@ function aplicarGpsNoPlano() {
   if (!campo || !tela || tela.classList.contains("hidden")) return;
   const ocupado = campo.dataset.gps !== "1" && !!origem && !origemGps;
   if (ocupado) return;
-  if (!aqui || !dentroPelotas(aqui.lat, aqui.lng)) return;
+  if (!aqui) return;
+  const fora = !dentroPelotas(aqui.lat, aqui.lng);
+  mostrarAvisoArea(fora);
   if (!aqui.nome) {
     campo.value = "Buscando localização…";
     campo.dataset.gps = "1";
@@ -306,10 +307,10 @@ function aplicarGpsNoPlano() {
     atualizarLimpar();
     return;
   }
-  origem = { nome: aqui.nome, lat: aqui.lat, lng: aqui.lng, numero: "S/N", complemento: "", tipo: "poi" };
+  origem = { nome: aqui.nome, lat: aqui.lat, lng: aqui.lng, numero: "S/N", complemento: "", tipo: "poi", fora: fora };
   origemGps = true;
   campo.value = textoCampo(aqui.nome, "");
-  campo.dataset.escolhido = "1";
+  campo.dataset.escolhido = fora ? "" : "1";
   campo.dataset.gps = "1";
   atualizarLimpar();
   if (!$("destino").value && (document.activeElement === campo || document.activeElement === document.body)) $("destino").focus();
@@ -319,6 +320,7 @@ function abrirPlano() {
   $("telaPlano").classList.toggle("plano-salvar", !!definindo);
   if (!definindo) show("blocoSalvar", false);
   marcarVersaoDebug();
+  if (aqui && aqui.lat != null) mostrarAvisoArea(!dentroPelotas(aqui.lat, aqui.lng));
   if (origem && $("origem").dataset.gps !== "1") {
     $("origem").value = textoCampo(origem.nome, origem.numero);
     $("origem").dataset.escolhido = "1";
@@ -396,7 +398,23 @@ function atualizarLimpar() {
 function numeroDoTexto(e) {
   return { numero: e.numero || "S/N", complemento: e.complemento || "" };
 }
+function mostrarAvisoArea(fora) {
+  const extra = fora ? ". Você ainda pode buscar endereços em Pelotas." : "";
+  ["avisoAreaHome", "avisoAreaPlano"].forEach(id => {
+    const el = $(id);
+    if (!el) return;
+    el.textContent = fora ? textoFora() + extra : "";
+    el.classList.toggle("hidden", !fora);
+  });
+}
+function pontoFora(p) {
+  return !!(p && p.lat != null && (p.fora || !dentroPelotas(p.lat, p.lng)));
+}
 function definirLado(lado, e) {
+  if (e && (e.fora || (e.lat != null && !dentroPelotas(e.lat, e.lng)))) {
+    toast(textoFora());
+    return;
+  }
   const extra = numeroDoTexto(e);
   const obj = {
     nome: e.nome, lat: e.lat, lng: e.lng, numero: extra.numero, complemento: extra.complemento,
@@ -423,7 +441,10 @@ function definirLado(lado, e) {
     if ($("btnContinuar")) show("btnContinuar", true);
     return;
   }
-  if (origem && destino && origem.lat != null && destino.lat != null && origem.numero && destino.numero) abrirConfirmar();
+  if (origem && destino && origem.lat != null && destino.lat != null && origem.numero && destino.numero) {
+    if (pontoFora(origem) || pontoFora(destino)) { toast(textoFora()); return; }
+    abrirConfirmar();
+  }
 }
 function limparDetalheVisual(lado) {
   const s = sufixo(lado);
@@ -478,6 +499,7 @@ function continuarPlano() {
     if (!destino || $("destino").dataset.escolhido !== "1") { toast("Escolha o endereço na lista ou no mapa."); return; }
     const b = lerDetalhe("destino");
     if (!b.ok) { toast(b.erro); $("numDestino").focus(); return; }
+    if (pontoFora(destino)) { toast(textoFora()); return; }
     guardar.gravar(definindo, { nome: destino.nome, lat: destino.lat, lng: destino.lng, numero: b.numero, complemento: b.complemento });
     toast((definindo === "casa" ? "Casa" : "Trabalho") + " salvo!");
     definindo = null; destino = null; $("destino").value = ""; limparDetalhe("destino");
@@ -492,6 +514,7 @@ function continuarPlano() {
   const a = lerDetalhe("origem"), b = lerDetalhe("destino");
   if (!a.ok) { toast("Retirada: " + a.erro); $("numOrigem").focus(); return; }
   if (!b.ok) { toast("Entrega: " + b.erro); $("numDestino").focus(); return; }
+  if (pontoFora(origem) || pontoFora(destino)) { toast(textoFora()); return; }
   origem.numero = a.numero; origem.complemento = a.complemento;
   destino.numero = b.numero; destino.complemento = b.complemento;
   abrirConfirmar();
@@ -630,7 +653,7 @@ async function nomearPino() {
   if (!dentroPelotas(c.lat, c.lng)) {
     pinoNomeando = false;
     pinoAtual = { lat: c.lat, lng: c.lng, nome: null, fora: true };
-    $("pinoNome").textContent = "Fora de Pelotas";
+    $("pinoNome").textContent = textoFora();
     atualizarBotaoPino();
     return;
   }
@@ -656,7 +679,7 @@ async function nomearPino() {
 function fecharPino() { clearTimeout(nomearTimer); telaSobre("telaPino", false); }
 function confirmarPino() {
   if (pinoNomeando || !pinoAtual || !pinoAtual.nome) return;
-  if (pinoAtual.fora || !dentroPelotas(pinoAtual.lat, pinoAtual.lng)) return toast("Por enquanto atendemos só Pelotas.");
+  if (pinoAtual.fora || !dentroPelotas(pinoAtual.lat, pinoAtual.lng)) return toast(textoFora());
   const ponto = {
     nome: pinoAtual.nome, lat: pinoAtual.lat, lng: pinoAtual.lng,
     numero: pinoAtual.numero || "S/N", complemento: pinoAtual.complemento || "", bairro: pinoAtual.bairro || "", tipo: "poi"
@@ -691,7 +714,7 @@ function pintarPontosAzuis() {
 }
 function irParaMim(qual) {
   if (!aqui || aqui.lat == null) { atualizarLocal(true); return; }
-  if (!dentroPelotas(aqui.lat, aqui.lng)) { toast("Você está fora de Pelotas."); return; }
+  if (!dentroPelotas(aqui.lat, aqui.lng)) { toast(textoFora()); return; }
   if (qual === "pino" && mapaPino) {
     pinoTextoFixo = "";
     pinoNomeando = false;

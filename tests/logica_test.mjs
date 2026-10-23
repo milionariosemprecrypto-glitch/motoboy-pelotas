@@ -184,7 +184,7 @@ const buscaMock = await run(`(async () => {
   return { urls, nome: lista[0] && lista[0].nome };
 })()`);
 assert.ok(buscaMock.urls.some(u => /photon/.test(u.url) && /Avenida%20Brasil/.test(u.url) && !/Pelotas/.test(u.url)), "Photon não recebe o sufixo Pelotas");
-assert.ok(buscaMock.urls.some(u => /nominatim/.test(u.url) && /E-Ja/.test(u.ua)), "Nominatim só entra se o Photon vier vazio, com User-Agent");
+assert.ok(buscaMock.urls.some(u => /nominatim/.test(u.url) && !u.ua), "Nominatim entra se o Photon vier vazio, sem o header User-Agent proibido");
 assert.match(buscaMock.nome, /Avenida Brasil/);
 
 const comNumero = await run(`(async () => {
@@ -216,6 +216,21 @@ const semCidade = await run(`(async () => {
   };
   return (await buscarEnderecos("Rua Sem Cidade", buscar)).length;
 })()`);
-assert.equal(semCidade, 0);
+assert.equal(semCidade, 1, "coordenada dentro de Pelotas não some só porque a cidade veio vazia");
+
+const turucu = await run(`(async () => {
+  const buscar = async (url) => {
+    if (String(url).includes("nominatim")) return { ok: true, json: async () => [] };
+    return { ok: true, json: async () => ({ features: [{
+      geometry: { coordinates: [-52.18, -31.417] },
+      properties: { name: "Rua Reinaldo Härter", city: "Turuçu", state: "Rio Grande do Sul", osm_key: "highway", osm_value: "residential" }
+    }] }) };
+  };
+  const lista = await buscarEnderecos("Rua Reinaldo", { buscar, bias: [-31.417, -52.18] });
+  return { n: lista.length, fora: lista[0] && lista[0].fora, aviso: lista[0] && lista[0].fora ? textoFora() : "" };
+})()`);
+assert.equal(turucu.n, 1, "resultado de Turuçu aparece");
+assert.equal(turucu.fora, true);
+assert.match(turucu.aviso, /Fora da área de entrega \(Pelotas\)/);
 
 console.log("logica_test: ok");

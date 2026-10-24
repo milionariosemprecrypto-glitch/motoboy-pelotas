@@ -237,4 +237,42 @@ assert.match(turucu.aviso, /Fora da área de entrega \(Pelotas\)/);
 assert.ok(turucu.urls.some(u => /photon/.test(u) && /lat=-31\.7719/.test(u) && !/lat=-31\.417/.test(u)), "GPS em Turuçu não entra na URL; o viés é o centro de Pelotas");
 assert.equal(run(`textoComposicaoCampo("", { type: "compositionupdate", data: "Av Brasil" }, true, "Av Brasil")`), "Av Brasil");
 
+assert.equal(run(`linhaDoPino("Rua General Osório", "100", "Centro")`), "Rua General Osório, 100 · Centro");
+assert.equal(run(`linhaDoPino("Rua General Osório", "S/N", "Centro")`), "Rua General Osório · Centro");
+assert.equal(run(`linhaDoPino("Avenida Brasil", "", "")`), "Avenida Brasil");
+assert.equal(run(`linhaDoPino("Rua X", "91", "Pelotas")`), "Rua X, 91");
+
+const reverso = await run(`(async () => {
+  const urls = [];
+  const buscar = async (url, init) => {
+    urls.push({ url: String(url), ua: !!(init && init.headers && (init.headers["User-Agent"] || init.headers["user-agent"])) });
+    if (String(url).includes("photon")) return { ok: true, json: async () => ({ features: [{ properties: {
+      name: "Rua General Osório", street: "Rua General Osório", housenumber: "100", district: "Centro",
+      city: "Pelotas", osm_key: "highway", osm_value: "residential"
+    } }] }) };
+    return { ok: true, json: async () => ({}) };
+  };
+  const end = await enderecoNoPonto(-31.765, -52.337, { buscar });
+  return { end, urls, nomi: urls.some(u => /nominatim/.test(u.url)) };
+})()`);
+assert.equal(reverso.end.linha, "Rua General Osório, 100 · Centro");
+assert.equal(reverso.end.numero, "100");
+assert.equal(reverso.end.nome, "Rua General Osório");
+assert.equal(reverso.nomi, false, "Photon com rua não chama o Nominatim");
+assert.ok(reverso.urls.every(u => !u.ua), "reverse no fetch não manda User-Agent");
+
+const reversoNomi = await run(`(async () => {
+  const buscar = async (url) => {
+    if (String(url).includes("photon")) return { ok: true, json: async () => ({ features: [] }) };
+    return { ok: true, json: async () => ({
+      name: "Rua Quinze de Novembro",
+      class: "highway", type: "residential",
+      address: { road: "Rua Quinze de Novembro", house_number: "50", suburb: "Centro", city: "Pelotas" }
+    }) };
+  };
+  return await enderecoNoPonto(-31.77, -52.34, { buscar });
+})()`);
+assert.equal(reversoNomi.linha, "Rua Quinze de Novembro, 50 · Centro");
+assert.equal(reversoNomi.numero, "50");
+
 console.log("logica_test: ok");

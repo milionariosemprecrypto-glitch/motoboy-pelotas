@@ -209,7 +209,9 @@ function criarMapaGL(id, opcoes) {
   el.classList.add("eja-mapa");
   const pitch = opcoes.pitch || 0;
   const rotacao = opcoes.rotacao != null ? !!opcoes.rotacao : pitch > 0;
-  const limite = opcoes.limiteCidade && typeof PELOTAS_BBOX !== "undefined" ? PELOTAS_BBOX : null;
+  const faixa = faixaDoMapa(opcoes);
+  const limite = faixa ? faixa.caixa : null;
+  const folga = faixa ? faixa.folga : 0;
   const gl = new maplibregl.Map({
     container: el,
     style: { version: 8, sources: {}, layers: [{ id: "fundo", type: "background", paint: { "background-color": PALETA.terra } }] },
@@ -219,7 +221,7 @@ function criarMapaGL(id, opcoes) {
     attributionControl: true,
     dragPan: true, dragRotate: rotacao, touchZoomRotate: true, touchPitch: pitch > 0 && rotacao,
     pitchWithRotate: false, doubleClickZoom: true, scrollZoom: true, cooperativeGestures: false,
-    maxBounds: limite ? [[limite[0] - 0.06, limite[1] - 0.06], [limite[2] + 0.06, limite[3] + 0.06]] : undefined
+    maxBounds: limite ? [[limite[0] - folga, limite[1] - folga], [limite[2] + folga, limite[3] + folga]] : undefined
   });
   if (!rotacao && gl.touchZoomRotate && gl.touchZoomRotate.disableRotation) gl.touchZoomRotate.disableRotation();
   if (!rotacao && gl.dragRotate && gl.dragRotate.disable) gl.dragRotate.disable();
@@ -358,7 +360,9 @@ function criarMapaGL(id, opcoes) {
   });
   // Só um gesto de verdade solta o "seguir". easeTo/fitBounds também disparam rotatestart.
   const gesto = ev => { if (ev && ev.originalEvent) api._emitir("dragstart"); };
+  const solta = ev => { if (ev && ev.originalEvent) api._emitir("dragend"); };
   gl.on("dragstart", gesto);
+  gl.on("dragend", solta);
   gl.on("rotatestart", gesto);
   gl.on("zoomstart", gesto);
   gl.on("pitchstart", gesto);
@@ -367,11 +371,24 @@ function criarMapaGL(id, opcoes) {
   return api;
 }
 
+// limite (bbox da busca) deixa o pino sair de Pelotas para mostrar "fora da área".
+// Sem ele, limiteCidade continua no retângulo da entrega.
+function faixaDoMapa(opcoes) {
+  opcoes = opcoes || {};
+  if (opcoes.limite && opcoes.limite.length === 4) return { caixa: opcoes.limite, folga: 0.05 };
+  if (opcoes.limiteCidade && typeof PELOTAS_BBOX !== "undefined") return { caixa: PELOTAS_BBOX, folga: 0.06 };
+  return null;
+}
 function criarMapaLeaflet(id, opcoes) {
   const m = L.map(id, {
     zoomControl: false, attributionControl: true,
     dragging: true, touchZoom: true, scrollWheelZoom: true, doubleClickZoom: true, boxZoom: true
   }).setView(PELOTAS, opcoes.zoom || 14);
+  const faixa = faixaDoMapa(opcoes);
+  if (faixa && window.L) {
+    const c = faixa.caixa, f = faixa.folga;
+    m.setMaxBounds(L.latLngBounds([c[1] - f, c[0] - f], [c[3] + f, c[2] + f]));
+  }
   m.attributionControl.setPrefix(false);
   m.getContainer().classList.add("eja-mapa");
   L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, className: "tiles-suaves", attribution: "© OpenStreetMap" }).addTo(m);

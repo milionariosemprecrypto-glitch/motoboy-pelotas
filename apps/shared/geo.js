@@ -300,7 +300,7 @@ async function buscarHttp(url, init) {
   const nativo = httpNativo();
   if (nativo && typeof nativo.get === "function") {
     try {
-      const versao = typeof APP_VERSAO !== "undefined" ? APP_VERSAO : "1.10";
+      const versao = typeof APP_VERSAO !== "undefined" ? APP_VERSAO : "1.11";
       const res = await nativo.get({
         url: String(url),
         headers: {
@@ -826,7 +826,94 @@ function textoEndereco(nome, numero, complemento) {
   return complemento ? linha + " — " + complemento : linha;
 }
 
-// Nome de um ponto (para "Localização atual" e pino arrastado). Retorna texto ou null.
+// "Rua General Osório, 100 · Centro". Sem número ou sem bairro, a parte some.
+function linhaDoPino(rua, numero, bairro) {
+  const base = String(rua || "").trim();
+  const n = numero && String(numero).trim() && String(numero).trim() !== "S/N" ? String(numero).trim() : "";
+  const com = n ? (base ? base + ", " + n : n) : base;
+  let b = String(bairro || "").trim();
+  if (b && semAcento(b) === "pelotas") b = "";
+  if (com && b) return com + " · " + b;
+  return com || b || "";
+}
+
+function bairroDoPonto(p) {
+  if (!p) return "";
+  const a = p.address || {};
+  const b = p.district || p.suburb || p.neighbourhood || p.city_district || p.quarter || p.locality
+    || a.suburb || a.neighbourhood || a.quarter || a.city_district || "";
+  const t = String(b || "").trim();
+  if (!t || semAcento(t) === "pelotas") return "";
+  return t;
+}
+
+// Rua, número (se o OSM tiver) e bairro. A coordenada de confirmação continua sendo o pino.
+function montarEnderecoPino(p) {
+  if (!p) return null;
+  const amig = rotuloAmigavel(p);
+  const rua = String(p.street || (amig.tipo === "rua" ? amig.nome : "") || amig.nome || "").trim();
+  const numero = String(p.housenumber || (p.address && p.address.house_number) || "").trim();
+  const bairro = bairroDoPonto(p);
+  const nome = String(amig.nome || rua || "").trim();
+  if (!nome && !rua) return null;
+  const linha = linhaDoPino(rua || nome, numero, bairro);
+  return { rua: rua || nome, numero, bairro, nome: nome || rua, linha: linha || nome || rua, tipo: amig.tipo || "poi" };
+}
+
+function nominatimParaProps(j) {
+  const a = (j && j.address) || {};
+  return {
+    name: (j && j.name) || a.road || a.pedestrian || "",
+    street: a.road || a.pedestrian || a.residential || a.footway || "",
+    housenumber: a.house_number || "",
+    district: a.suburb || a.neighbourhood || a.quarter || a.city_district || "",
+    city: a.city || a.town || "",
+    osm_key: (j && (j.class || j.category)) || "",
+    osm_value: (j && j.type) || "",
+    address: a
+  };
+}
+
+async function lerJsonBusca(buscar, url, init) {
+  const r = await buscar(url, init);
+  if (!r || r.ok === false) return null;
+  if (typeof r.json === "function") return await r.json();
+  return r;
+}
+
+// Reverse do pino: Photon e, se não vier rua, Nominatim. Não move o mapa.
+// Retorna { rua, numero, bairro, nome, linha } ou null. O fetch do navegador não manda User-Agent.
+async function enderecoNoPonto(lat, lng, opts) {
+  opts = opts || {};
+  if (!isFinite(lat) || !isFinite(lng)) return null;
+  const buscar = opts.buscar || (typeof buscarHttp === "function" ? buscarHttp : (typeof fetch === "function" ? fetch : null));
+  if (!buscar) return null;
+  const ctrl = typeof AbortController === "function" ? new AbortController() : null;
+  if (opts.signal && ctrl) opts.signal.addEventListener("abort", () => ctrl.abort());
+  const timer = setTimeout(() => { if (ctrl) ctrl.abort(); }, opts.timeout || 4000);
+  const init = ctrl ? { signal: ctrl.signal } : {};
+  const abortou = e => !!(e && e.name === "AbortError");
+  try {
+    let end = null;
+    try {
+      const photon = await lerJsonBusca(buscar, "https://photon.komoot.io/reverse?lat=" + lat + "&lon=" + lng, init);
+      const feat = photon && photon.features && photon.features[0];
+      end = feat ? montarEnderecoPino(feat.properties || {}) : null;
+    } catch (e) {
+      if (abortou(e)) return null;
+    }
+    if (end && end.rua) return end;
+    try {
+      const nomi = await lerJsonBusca(buscar, "https://nominatim.openstreetmap.org/reverse?format=jsonv2&addressdetails=1&zoom=18&lat=" + lat + "&lon=" + lng, init);
+      const extra = nomi ? montarEnderecoPino(nominatimParaProps(nomi)) : null;
+      return extra || end;
+    } catch (e) {
+      return end;
+    }
+  } finally { clearTimeout(timer); }
+}
+
+// Nome de um ponto (para "Localização atual"). Retorna texto ou null.
 // timeout padrão de 4 s. signal cancela a consulta anterior.
 async function nomeDoPonto(lat, lng, opts) {
   opts = opts || {};

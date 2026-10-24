@@ -556,10 +556,18 @@ function continuarPlano() {
   abrirConfirmar();
 }
 
-// ---------- Escolher no mapa (pino arrastável) ----------
+// ---------- Ajustar no mapa (pino fixo no centro) ----------
 let pinoLado = "destino", pinoTextoFixo = "", pinoAtual = null, pinoBuscaLigada = false;
 let pinoAlvo = null, cameraPropria = 0, pinoNomeando = false, pinoSeq = 0, nomearTimer = null;
+let pinoArrastando = false, pinoAbort = null;
+const PINO_NOMEAR_MS = 500;
 function marcarNoMapa(lado, texto) { abrirPinoMapa(lado, texto); }
+function abrirAjusteMapa() {
+  const foco = $("telaPlano") && $("telaPlano").dataset.foco === "origem" ? "origem" : "destino";
+  const campo = $(foco);
+  const texto = campo && campo.dataset.escolhido === "1" ? "" : ((campo && campo.value.trim()) || "");
+  abrirPinoMapa(foco, texto);
+}
 function paddingPino() {
   const el = mapaPino.getContainer();
   const H = el.clientHeight || window.innerHeight || 700;
@@ -599,27 +607,46 @@ function centralizarPino(ll, zoom, duracao) {
   });
   setTimeout(() => { cameraPropria = Math.max(0, cameraPropria - 1); }, (duracao || 0) + 80);
 }
+function levantarPino(sim) {
+  const pin = document.querySelector("#telaPino .pino-central");
+  if (pin) pin.classList.toggle("levantado", !!sim);
+}
+function pertoDoPino(a, b, metros) {
+  if (!a || !b || a.lat == null || b.lat == null) return false;
+  return distMetros(a.lat, a.lng, [b.lat, b.lng]) < metros;
+}
 function atualizarBotaoPino() {
   const btn = $("btnPino");
   const fora = pinoAtual && pinoAtual.fora;
-  if (btn) btn.disabled = !!(pinoNomeando || !pinoAtual || !pinoAtual.nome || fora);
+  if (btn) btn.disabled = !!(pinoArrastando || pinoNomeando || !pinoAtual || !pinoAtual.nome || fora);
   show("pinoFora", !!fora);
 }
-function agendarNomear() {
+function agendarNomear(opcoes) {
   clearTimeout(nomearTimer);
   pinoNomeando = true;
   atualizarBotaoPino();
-  $("pinoNome").textContent = "Buscando endereço…";
-  nomearTimer = setTimeout(nomearPino, 350);
+  if (!(opcoes && opcoes.manterTexto)) $("pinoNome").textContent = "Buscando endereço…";
+  nomearTimer = setTimeout(nomearPino, PINO_NOMEAR_MS);
 }
 function abrirPinoMapa(lado, texto) {
   pinoLado = lado === "origem" ? "origem" : "destino";
   pinoTextoFixo = texto || "";
   telaSobre("telaPino", true);
   if (!mapaPino) {
-    mapaPino = criarMapa("mapaPino", { rotacao: false, limiteCidade: true, zoom: 16 });
+    mapaPino = criarMapa("mapaPino", { rotacao: false, limite: bboxBusca(), zoom: 16 });
+    mapaPino.on("dragstart", () => {
+      if ($("telaPino").classList.contains("hidden")) return;
+      pinoArrastando = true;
+      pinoSeq++;
+      if (pinoAbort) { try { pinoAbort.abort(); } catch (e) {} }
+      clearTimeout(nomearTimer);
+      pinoNomeando = true;
+      levantarPino(true);
+      atualizarBotaoPino();
+    });
     mapaPino.on("moveend", () => {
       if ($("telaPino").classList.contains("hidden")) return;
+      if (pinoArrastando) { pinoArrastando = false; levantarPino(false); }
       const novo = pontoDoPino();
       const mesmo = pinoAlvo && Math.abs(novo.lat - pinoAlvo.lat) < 0.00004 && Math.abs(novo.lng - pinoAlvo.lng) < 0.00004;
       if (cameraPropria > 0 || mesmo) {
@@ -627,7 +654,13 @@ function abrirPinoMapa(lado, texto) {
         return;
       }
       pinoTextoFixo = "";
-      pinoAlvo = novo;
+      pinoAlvo = { lat: novo.lat, lng: novo.lng };
+      if (pinoAtual && pinoAtual.nome && !pinoAtual.fora && pertoDoPino(pinoAtual, novo, 12)) {
+        pinoAtual = Object.assign({}, pinoAtual, { lat: novo.lat, lng: novo.lng });
+        pinoNomeando = false;
+        atualizarBotaoPino();
+        return;
+      }
       agendarNomear();
     });
   }
@@ -635,13 +668,20 @@ function abrirPinoMapa(lado, texto) {
     pinoBuscaLigada = true;
     autocompletar($("buscaPino"), $("sugPino"), e => {
       pinoTextoFixo = "";
-      pinoAtual = { lat: e.lat, lng: e.lng, nome: e.nome, numero: e.numero || "", complemento: e.complemento || "", bairro: e.bairro || "", fora: false };
-      $("pinoNome").textContent = e.titulo || e.nome;
+      pinoSeq++;
+      if (pinoAbort) { try { pinoAbort.abort(); } catch (err) {} }
+      clearTimeout(nomearTimer);
+      pinoNomeando = false;
+      centralizarPino(e, 17, 0);
+      const c = pontoDoPino();
+      const linha = typeof linhaDoPino === "function" ? linhaDoPino(e.nome, e.numero, e.bairro) : (e.titulo || e.nome);
+      pinoAtual = {
+        lat: c.lat, lng: c.lng, nome: e.nome, numero: e.numero || "S/N",
+        complemento: e.complemento || "", bairro: e.bairro || "", fora: false, tipo: e.tipo || "poi"
+      };
+      $("pinoNome").textContent = linha || e.titulo || e.nome;
       $("buscaPino").value = e.titulo || e.nome;
       atualizarLimpar();
-      pinoNomeando = false;
-      clearTimeout(nomearTimer);
-      centralizarPino(e, 17, 0);
       atualizarBotaoPino();
     }, t => {
       pinoTextoFixo = t;
@@ -660,15 +700,17 @@ function abrirPinoMapa(lado, texto) {
   $("buscaPino").value = pinoTextoFixo;
   atualizarLimpar();
   const titulo = $("folhaPino").querySelector("h2");
-  if (titulo) titulo.textContent = pinoLado === "origem" ? "Marque a retirada" : "Marque o destino";
+  if (titulo) titulo.textContent = "Ajustar no mapa";
+  const dica = $("pinoDica");
+  if (dica) dica.textContent = (pinoLado === "origem" ? "Retirada" : "Entrega") + " · arraste o mapa até o ponto";
   const c = (pinoLado === "origem" ? origem : destino) || aqui;
   const ll = c && c.lat != null ? { lat: c.lat, lng: c.lng } : { lat: PELOTAS[0], lng: PELOTAS[1] };
   if (c && c.nome && !texto) {
-    pinoAtual = { lat: ll.lat, lng: ll.lng, nome: c.nome, numero: c.numero || "S/N", complemento: c.complemento || "", bairro: c.bairro || "" };
-    $("pinoNome").textContent = c.nome;
+    pinoAtual = { lat: ll.lat, lng: ll.lng, nome: c.nome, numero: c.numero || "S/N", complemento: c.complemento || "", bairro: c.bairro || "", fora: !!c.fora };
+    $("pinoNome").textContent = (typeof linhaDoPino === "function" ? linhaDoPino(c.nome, c.numero, c.bairro) : "") || c.nome;
     pinoNomeando = false;
   } else if (texto) {
-    pinoAtual = { lat: ll.lat, lng: ll.lng, nome: texto };
+    pinoAtual = { lat: ll.lat, lng: ll.lng, nome: texto, numero: "S/N", fora: false };
     $("pinoNome").textContent = texto;
     pinoNomeando = false;
   } else pinoAtual = null;
@@ -678,7 +720,7 @@ function abrirPinoMapa(lado, texto) {
     folhaIr($("folhaPino"), 1);
     pintarPontoAzul(mapaPino, "pino");
     centralizarPino(ll, 17, 0);
-    if (!pinoAtual || !pinoAtual.nome) agendarNomear();
+    agendarNomear({ manterTexto: !!(pinoAtual && pinoAtual.nome) });
   }, 80);
 }
 async function nomearPino() {
@@ -689,36 +731,58 @@ async function nomearPino() {
   if (!dentroPelotas(c.lat, c.lng)) {
     pinoNomeando = false;
     pinoAtual = { lat: c.lat, lng: c.lng, nome: null, fora: true };
-    $("pinoNome").textContent = textoFora();
-    atualizarBotaoPino();
-    return;
-  }
-  if (pinoTextoFixo) {
-    pinoNomeando = false;
-    pinoAtual = { lat: c.lat, lng: c.lng, nome: pinoTextoFixo, fora: false };
-    $("pinoNome").textContent = pinoTextoFixo;
+    $("pinoNome").textContent = "Fora da área de entrega";
     atualizarBotaoPino();
     return;
   }
   pinoNomeando = true;
   atualizarBotaoPino();
-  $("pinoNome").textContent = "Buscando endereço…";
-  const n = await nomeDoPonto(c.lat, c.lng, { timeout: 4000 });
+  if (pinoAbort) { try { pinoAbort.abort(); } catch (e) {} }
+  pinoAbort = typeof AbortController === "function" ? new AbortController() : null;
+  const end = await enderecoNoPonto(c.lat, c.lng, { timeout: 4000, signal: pinoAbort && pinoAbort.signal });
   if (seq !== pinoSeq) return;
   const agora = pontoDoPino();
-  if (Math.abs(agora.lat - c.lat) > 0.00015 || Math.abs(agora.lng - c.lng) > 0.00015) return;
+  if (!dentroPelotas(agora.lat, agora.lng)) {
+    pinoNomeando = false;
+    pinoAtual = { lat: agora.lat, lng: agora.lng, nome: null, fora: true };
+    $("pinoNome").textContent = "Fora da área de entrega";
+    atualizarBotaoPino();
+    return;
+  }
+  const base = pinoLado === "origem" ? origem : destino;
+  let numero = end && end.numero ? end.numero : "";
+  if (!numero && base && base.numero && base.numero !== "S/N" && pertoDoPino(base, agora, 30)) numero = base.numero;
+  const nome = (end && end.nome) || pinoTextoFixo || "Ponto no mapa";
+  const bairro = (end && end.bairro) || "";
+  const linha = linhaDoPino((end && (end.rua || end.nome)) || nome, numero, bairro) || nome;
   pinoNomeando = false;
-  pinoAtual = { lat: c.lat, lng: c.lng, nome: n || "Ponto no mapa", fora: false };
-  $("pinoNome").textContent = pinoAtual.nome;
+  pinoAtual = {
+    lat: agora.lat, lng: agora.lng, nome, numero: numero || "S/N",
+    complemento: "", bairro, fora: false, tipo: (end && end.tipo) || "poi"
+  };
+  $("pinoNome").textContent = linha || nome;
   atualizarBotaoPino();
 }
-function fecharPino() { clearTimeout(nomearTimer); telaSobre("telaPino", false); }
+function fecharPino() {
+  clearTimeout(nomearTimer);
+  pinoSeq++;
+  pinoArrastando = false;
+  levantarPino(false);
+  if (pinoAbort) { try { pinoAbort.abort(); } catch (e) {} }
+  telaSobre("telaPino", false);
+}
 function confirmarPino() {
-  if (pinoNomeando || !pinoAtual || !pinoAtual.nome) return;
-  if (pinoAtual.fora || !dentroPelotas(pinoAtual.lat, pinoAtual.lng)) return toast(textoFora());
+  if (pinoArrastando || pinoNomeando || !pinoAtual || !pinoAtual.nome) return;
+  const c = pontoDoPino();
+  if (!c || !dentroPelotas(c.lat, c.lng)) {
+    pinoAtual = { lat: c ? c.lat : 0, lng: c ? c.lng : 0, nome: null, fora: true };
+    $("pinoNome").textContent = "Fora da área de entrega";
+    atualizarBotaoPino();
+    return;
+  }
   const ponto = {
-    nome: pinoAtual.nome, lat: pinoAtual.lat, lng: pinoAtual.lng,
-    numero: pinoAtual.numero || "S/N", complemento: pinoAtual.complemento || "", bairro: pinoAtual.bairro || "", tipo: "poi"
+    nome: pinoAtual.nome, lat: c.lat, lng: c.lng,
+    numero: pinoAtual.numero || "S/N", complemento: pinoAtual.complemento || "", bairro: pinoAtual.bairro || "", tipo: pinoAtual.tipo || "poi"
   };
   const lado = pinoLado;
   pinoTextoFixo = "";
@@ -750,17 +814,14 @@ function pintarPontosAzuis() {
 }
 function irParaMim(qual) {
   if (!aqui || aqui.lat == null) { atualizarLocal(true); return; }
-  if (!dentroPelotas(aqui.lat, aqui.lng)) { toast(textoFora()); return; }
   if (qual === "pino" && mapaPino) {
     pinoTextoFixo = "";
-    pinoNomeando = false;
-    clearTimeout(nomearTimer);
-    pinoAtual = { lat: aqui.lat, lng: aqui.lng, nome: aqui.nome || "Minha localização", numero: "S/N", fora: false };
-    $("pinoNome").textContent = pinoAtual.nome;
-    atualizarBotaoPino();
-    centralizarPino(aqui, 17, 350);
+    levantarPino(false);
+    centralizarPino({ lat: aqui.lat, lng: aqui.lng }, 17, 350);
+    agendarNomear();
     return;
   }
+  if (!dentroPelotas(aqui.lat, aqui.lng)) { toast(textoFora()); return; }
   const m = qual === "pedido" ? mapaPed : mapa;
   if (!m) return;
   if (qual === "pedido") { seguirPedido = false; $("pedido").classList.add("mapa-livre"); }
@@ -814,8 +875,18 @@ async function abrirConfirmar() {
   rota = await calcularRota(origem, destino);
   if (rota && rota.segundos) etaMin = Math.max(1, Math.round(rota.segundos / 60));
   desenharConfirmacao();
-  const { data, error } = await db.rpc("cotar_preco", params());
-  if (error) { $("km").textContent = erroMsg(error); return; }
+  const cotacao = await db.rpc("cotar_preco", params());
+  const data = cotacao && cotacao.data;
+  const error = cotacao && cotacao.error;
+  if (error || !data || !data[0]) {
+    if (rota && isFinite(rota.km)) {
+      const kmRua = Number(rota.km).toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+      $("km").textContent = kmRua + " km pela rua" + (etaMin ? " · ~" + etaMin + " min" : "");
+      $("valor").textContent = "—";
+    } else $("km").textContent = erroMsg(error || { message: "Não foi possível calcular a rota." });
+    desenharConfirmacao();
+    return;
+  }
   $("valor").textContent = money(data[0].preco);
   const km = Number(data[0].distancia_km).toLocaleString("pt-BR");
   const pelaRua = data[0].fonte === "rota" && rota;

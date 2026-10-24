@@ -148,6 +148,7 @@
     <p id="estadoBusca" class="estado-busca" aria-live="polite"></p>
     <div id="sugOrigem" class="sugestoes"></div>
     <div id="sugDestino" class="sugestoes"></div>
+    <button type="button" id="btnAjustarMapa" class="btn-ajustar" onclick="abrirAjusteMapa()">Ajustar no mapa</button>
     <div id="blocoSalvar" class="hidden">
       <div id="detOrigem" class="detalhe-end hidden">
         <p class="rotulo-lado">Retirada</p>
@@ -186,11 +187,11 @@
     <div class="folha" id="folhaPino">
       <div class="alca"></div>
       <div class="folha-miolo">
-        <h2 class="centro">Marque no mapa</h2>
-        <p class="small centro">Arraste o mapa. O pino marca o ponto.</p>
+        <h2 class="centro">Ajustar no mapa</h2>
+        <p class="small centro" id="pinoDica">Arraste o mapa. O pino marca o ponto.</p>
         <div class="campo-falso" id="pinoNome">Para onde?</div>
-        <p id="pinoFora" class="small erro hidden">Fora da área de entrega (Pelotas) — distância não permitida.</p>
-        <button id="btnPino" class="btn-preto" type="button" onclick="confirmarPino()" disabled>Confirmar este ponto</button>
+        <p id="pinoFora" class="small erro hidden">Fora da área de entrega</p>
+        <button id="btnPino" class="btn-preto" type="button" onclick="confirmarPino()" disabled>Confirmar local</button>
       </div>
     </div>
   </section>

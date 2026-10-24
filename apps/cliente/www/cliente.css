@@ -4,7 +4,7 @@ body.tema-claro { --bg:#ffffff; --text:#111; --muted:#6b7280; --border:#eceef1; 
 .tema-claro .tela.sobre { position:fixed; inset:0; z-index:3000; background:#fff; max-width:none; overflow:auto; padding-bottom:30px; }
 .tema-claro .tela.sobre.mapa-tela { background:transparent; overflow:hidden; padding:0; pointer-events:none; }
 .mapa-tela .eja-mapa, .mapa-tela .maplibregl-canvas, .mapa-tela .leaflet-container,
-.mapa-tela .folha, .mapa-tela .fab-voltar, .mapa-tela .fab-mapa, .mapa-tela .busca-flutuante { pointer-events:auto; }
+.mapa-tela .folha, .mapa-tela .fab-voltar, .mapa-tela .fab-mapa, .mapa-tela .fab-local, .mapa-tela .busca-flutuante { pointer-events:auto; }
 .mapa-tela .fab-mapa { display:none; }
 .mapa-tela.mapa-livre .fab-mapa { display:grid; place-items:center; }
 html.plano-aberto, html.plano-aberto body { overflow:hidden; }
@@ -36,6 +36,8 @@ html.plano-aberto, html.plano-aberto body { overflow:hidden; }
 .estado-busca { display:block; margin:10px 2px 0; min-height:22px; font:600 15px/1.35 Poppins, sans-serif; color:#111; }
 .estado-busca:empty { display:none; }
 #telaPlano .sugestao, #telaPlano button.sugestao { border-radius:12px; }
+.btn-ajustar { display:inline-flex; align-items:center; margin:12px 2px 0; padding:8px 14px; border:1px solid #e5e7eb;
+  border-radius:999px; background:#fff; color:#111; font:600 14px Poppins, sans-serif; cursor:pointer; }
 #telaPlano:not(.plano-salvar) #blocoSalvar { display:none !important; }
 .tema-claro input, .tema-claro select { background:#f3f4f6; color:#111; border:1px solid transparent; border-radius:12px; }
 .tema-claro input:focus, .tema-claro select:focus { border-color:#111; box-shadow:none; background:#fff; }
@@ -160,9 +162,13 @@ body.sem-nav .nav-flutuante { display:none; }
 .folha .alca::before { background:#e5e7eb; }
 .centro { text-align:center; } .folha h2 { margin:6px 0 2px; font:700 21px Poppins, sans-serif; }
 .campo-falso { background:#f3f4f6; border-radius:12px; padding:15px 14px; margin-top:14px; font-size:15px; color:#111; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.pino-central { position:fixed; z-index:3010; left:50%; top:32%; transform:translate(-50%, -100%); pointer-events:none; }
-.pino-central i { display:block; width:26px; height:26px; border-radius:50%; background:#111; border:7px solid #111; box-shadow:inset 0 0 0 4px #fff; position:relative; }
-.pino-central i::after { content:""; position:absolute; left:50%; top:100%; width:3px; height:22px; background:#111; transform:translateX(-50%); }
+/* A caixa inclui a haste: translate -100% deixa a ponta no pixel do pino, sem deslocar a coordenada. */
+.pino-central { position:fixed; z-index:3010; left:50%; top:32%; width:28px; height:40px; pointer-events:none;
+  transform:translate(-50%, -100%); transition:transform 160ms ease; }
+.pino-central.levantado { transform:translate(-50%, calc(-100% - 18px)); }
+.pino-central i { display:block; width:22px; height:22px; margin:0 auto; box-sizing:border-box; border-radius:50%; background:#fff; border:6px solid #111; position:relative; }
+.pino-central i::after { content:""; position:absolute; left:50%; top:100%; width:3px; height:18px; background:#111; transform:translateX(-50%); }
+#btnPino.btn-preto { padding:12px 16px; font-size:15px; }
 .fab-mapa, .fab-local { position:fixed; z-index:3100; right:calc(14px + var(--safe-right)); bottom:calc(var(--folha-altura, 240px) + 14px);
   width:44px; height:44px; border-radius:50%; border:0; background:#fff; color:#111; box-shadow:0 3px 12px #0003;
   font:700 18px Poppins, sans-serif; cursor:pointer; }

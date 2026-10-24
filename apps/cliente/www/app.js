@@ -703,8 +703,10 @@ function abrirPinoMapa(lado, texto) {
   if (titulo) titulo.textContent = "Ajustar no mapa";
   const dica = $("pinoDica");
   if (dica) dica.textContent = (pinoLado === "origem" ? "Retirada" : "Entrega") + " · arraste o mapa até o ponto";
-  const c = (pinoLado === "origem" ? origem : destino) || aqui;
-  const ll = c && c.lat != null ? { lat: c.lat, lng: c.lng } : { lat: PELOTAS[0], lng: PELOTAS[1] };
+  const escolhido = pinoLado === "origem" ? origem : destino;
+  const c = escolhido && escolhido.lat != null ? escolhido
+    : (aqui && aqui.lat != null && dentroPelotas(aqui.lat, aqui.lng) ? aqui : null);
+  const ll = c ? { lat: c.lat, lng: c.lng } : { lat: PELOTAS[0], lng: PELOTAS[1] };
   if (c && c.nome && !texto) {
     pinoAtual = { lat: ll.lat, lng: ll.lng, nome: c.nome, numero: c.numero || "S/N", complemento: c.complemento || "", bairro: c.bairro || "", fora: !!c.fora };
     $("pinoNome").textContent = (typeof linhaDoPino === "function" ? linhaDoPino(c.nome, c.numero, c.bairro) : "") || c.nome;

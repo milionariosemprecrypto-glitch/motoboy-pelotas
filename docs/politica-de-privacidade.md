@@ -17,7 +17,8 @@ Esta Política explica, em linguagem simples, como o É-Já trata dados pessoais
 |---|---|---|---|
 | Nome, e-mail, telefone, senha (criptografada) | Todos | Criar e manter a conta, login, contato sobre pedidos | Art. 7º, V (execução de contrato) |
 | Registro do aceite (documento, versão, data/hora, IP, aparelho) | Todos | Provar o aceite dos Termos e desta Política | Art. 7º, II (obrigação legal – Marco Civil art. 7º) e IX (legítimo interesse) |
-| Endereços de retirada/entrega, coordenadas, item, preço, histórico | Clientes | Calcular preço e rota, executar e comprovar a entrega, atendimento | Art. 7º, V |
+| Endereços de retirada/entrega (rua, número ou S/N, complemento), coordenadas, item, preço, histórico | Clientes | Calcular preço e rota, executar e comprovar a entrega, atendimento | Art. 7º, V |
+| Mensagens do chat da corrida | Cliente e motoboy daquela corrida | Combinar a retirada e a entrega enquanto a corrida está aceita ou em rota | Art. 7º, V |
 | CPF, CNH (número, categoria, datas), placa e modelo da moto, certificado do curso de motofrete | Motoboys | Verificar requisitos legais do motofrete (Lei 12.009/2009, CTB 139-A) e identificar o prestador | Art. 7º, II (obrigação legal) e V (contrato) |
 | Foto do rosto (selfie) | Motoboys | Conferir que quem dirige é o titular da CNH e prevenir fraude de identidade | **Art. 11, II, "g"** (dado biométrico – prevenção à fraude e segurança do titular) |
 | Certidão de antecedentes criminais (opcional) | Motoboys | Avaliar a segurança da atividade, com envio voluntário | **Art. 11, I** (consentimento específico e destacado) |
@@ -37,7 +38,7 @@ Esta Política explica, em linguagem simples, como o É-Já trata dados pessoais
 ## 4. Compartilhamento
 
 Compartilhamos dados apenas quando necessário:
-- **Entre as partes do pedido:** o Cliente vê o primeiro nome, a moto, a placa e a posição do motoboy durante a corrida; o motoboy vê os endereços, o item e o primeiro nome do Cliente.
+- **Entre as partes do pedido:** o Cliente vê o primeiro nome, a moto, a placa e a posição do motoboy durante a corrida; o motoboy vê os endereços (com número e complemento), o item e o primeiro nome do Cliente. As mensagens do chat ficam visíveis só para os dois, e só enquanto a corrida está aceita ou a caminho.
 - **Operadores (fornecedores):** Supabase (banco de dados, login e arquivos, servidores em São Paulo-SP); Google Firebase Cloud Messaging (notificações, com possível **transferência internacional** para os EUA, com cláusulas contratuais do fornecedor – art. 33); serviços de mapas e rotas (OpenStreetMap/OpenFreeMap, OSRM, Photon), que recebem apenas coordenadas e endereços pesquisados, sem identificação pessoal; Cloudflare (hospedagem do site); e, quando contratados, seguradora e meio de pagamento.
 - **Autoridades:** mediante ordem judicial ou requisição legal.
 
@@ -47,6 +48,7 @@ Compartilhamos dados apenas quando necessário:
 |---|---|---|
 | Conta (nome, e-mail, telefone) | Enquanto a conta existir | Apagada na exclusão da conta |
 | Posições de GPS | **90 dias** | Apagadas automaticamente (rotina diária) |
+| Mensagens do chat | **90 dias** após o envio, ou **90 dias** após o fim da corrida (o que ocorrer antes). Na exclusão da conta, o texto é apagado na hora | Apagadas automaticamente (mesma rotina diária das posições) |
 | Documentos de motoboy **aprovado** | Enquanto ativo | Apagados na exclusão da conta |
 | Documentos de cadastro **reprovado ou suspenso** | **30 dias** após a decisão (salvo contestação ou processo em andamento) | Arquivos apagados automaticamente (rotina diária) |
 | Certidão de antecedentes | Até a análise | Arquivo apagado; fica só o resultado e a data |

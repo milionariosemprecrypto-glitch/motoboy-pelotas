@@ -2,11 +2,11 @@
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=overlays-content">
 <meta name="theme-color" content="#ffffff">
 <title>É-Já</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
-<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+<link rel="stylesheet" href="shared/vendor/maplibre-gl.css">
 <link rel="stylesheet" href="shared/style.css">
 <link rel="stylesheet" href="cliente.css">
 </head>
@@ -53,13 +53,20 @@
   <!-- ===== Início ===== -->
   <section id="home" class="tela aba">
     <div class="topo-home">
-      <button class="loc-atual" onclick="atualizarLocal(true)"><i class="ponto-azul"></i><span id="locAtual">Localização atual</span> ▾</button>
+      <button class="loc-atual" type="button" onclick="abrirMenuLocal()"><i class="ponto-azul"></i><span id="locAtual">Buscando localização…</span> ▾</button>
+      <div id="menuLocal" class="menu-local hidden">
+        <button type="button" onclick="usarGpsComoRetirada()">📍 Posição atual</button>
+        <button type="button" onclick="usarLugar('casa'); fecharMenuLocal()">🏠 Casa</button>
+        <button type="button" onclick="usarLugar('trabalho'); fecharMenuLocal()">💼 Trabalho</button>
+        <div id="menuRecentes"></div>
+      </div>
       <img src="shared/img/eja-wordmark-claro.svg" class="mini-logo" alt="É-Já">
     </div>
     <div id="cardBoasVindas" class="boas-vindas hidden">
       <b>Bem-vindo ao É-Já! 🧡</b>
       <span>Sua primeira entrega está a 3 toques: escolha o destino, veja o preço e confirme.</span>
     </div>
+    <p id="avisoAreaHome" class="aviso-area hidden"></p>
     <div class="busca-pill">
       <button id="pillParaOnde" class="busca-btn" onclick="abrirPlano()"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/></svg>Para onde?</button>
       <button class="mais-tarde" onclick="maisTarde()"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/></svg>Mais tarde</button>
@@ -111,82 +118,133 @@
     <button id="navConta" onclick="irAba('conta')"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-4 4.5-6 8-6s7 2 8 6"/></svg>Conta</button>
   </nav>
 
-  <!-- ===== Planejar (origem/destino) ===== -->
-  <section id="telaPlano" class="tela sobre hidden">
+  <!-- ===== Planejar (origem em cima, Para onde? embaixo) ===== -->
+  <section id="telaPlano" class="tela sobre hidden" data-foco="destino">
     <div class="plano-topo">
       <button class="voltar" onclick="fecharPlano()">←</button>
       <h2>Planeje sua entrega</h2>
+      <button type="button" id="planoDebug" class="plano-debug hidden" aria-label="Abrir diagnóstico da busca"></button>
     </div>
-    <div class="chips">
-      <button class="chip" onclick="maisTarde()">🕒 Ir agora ▾</button>
-      <button class="chip" id="chipCategoria" onclick="irAba('opcoes'); fecharPlano()">📦 <span id="categoriaAtual">Entrega rápida</span> ▾</button>
-    </div>
+    <div class="plano-rolagem">
+    <p id="avisoAreaPlano" class="aviso-area hidden"></p>
+    <pre id="painelDebugBusca" class="painel-debug hidden"></pre>
     <div class="caixa-rota">
       <div class="trilho"><i class="t-a"></i><i class="t-linha"></i><i class="t-b"></i></div>
       <div class="campos">
-        <div class="campo"><input id="origem" placeholder="Endereço de retirada" autocomplete="off" maxlength="200"><div id="sugOrigem" class="sugestoes"></div></div>
-        <div class="campo"><input id="destino" placeholder="Para onde?" autocomplete="off" maxlength="200"><div id="sugDestino" class="sugestoes"></div></div>
+        <div class="campo" id="slotOrigem">
+          <div class="campo-busca">
+            <input id="origem" placeholder="Endereço de retirada" autocomplete="off" maxlength="200" enterkeyhint="search" aria-label="Retirada">
+            <button type="button" class="limpar hidden" id="limparOrigem" aria-label="Limpar retirada">×</button>
+          </div>
+        </div>
+        <div class="campo" id="slotDestino">
+          <div class="campo-busca">
+            <input id="destino" placeholder="Para onde?" autocomplete="off" maxlength="200" enterkeyhint="search" aria-label="Destino">
+            <button type="button" class="limpar hidden" id="limparDestino" aria-label="Limpar destino">×</button>
+          </div>
+        </div>
       </div>
     </div>
-    <div class="chips">
-      <button class="chip" onclick="usarLugar('casa')">🏠 Casa</button>
-      <button class="chip" onclick="usarLugar('trabalho')">💼 Trabalho</button>
-      <button class="chip" onclick="abrirPinoMapa()">📍 Escolher no mapa</button>
+    <p id="estadoBusca" class="estado-busca" aria-live="polite"></p>
+    <div id="sugOrigem" class="sugestoes"></div>
+    <div id="sugDestino" class="sugestoes"></div>
+    <button type="button" id="btnAjustarMapa" class="btn-ajustar" onclick="abrirAjusteMapa()">Ajustar no mapa</button>
+    <div id="blocoSalvar" class="hidden">
+      <div id="detOrigem" class="detalhe-end hidden">
+        <p class="rotulo-lado">Retirada</p>
+        <div class="linha-numero">
+          <input id="numOrigem" maxlength="10" inputmode="text" placeholder="Número" autocomplete="off" aria-label="Número da retirada">
+          <label class="sn" for="snOrigem"><input type="checkbox" id="snOrigem"> S/N</label>
+        </div>
+        <input id="compOrigem" maxlength="80" placeholder="Complemento ou referência (opcional)" autocomplete="off" aria-label="Complemento da retirada">
+      </div>
+      <div id="detDestino" class="detalhe-end hidden">
+        <p class="rotulo-lado">Entrega</p>
+        <div class="linha-numero">
+          <input id="numDestino" maxlength="10" inputmode="text" placeholder="Número" autocomplete="off" aria-label="Número da entrega">
+          <label class="sn" for="snDestino"><input type="checkbox" id="snDestino"> S/N</label>
+        </div>
+        <input id="compDestino" maxlength="80" placeholder="Complemento ou referência (opcional)" autocomplete="off" aria-label="Complemento da entrega">
+      </div>
+      <button id="btnContinuar" class="btn-preto" type="button" onclick="continuarPlano()">Salvar este endereço</button>
     </div>
-    <div id="listaRecentes" class="lista"></div>
+    </div>
   </section>
 
   <!-- ===== Escolher no mapa (pino) ===== -->
-  <section id="telaPino" class="tela sobre hidden">
+  <section id="telaPino" class="tela sobre mapa-tela hidden">
     <div id="mapaPino" class="mapa-cheio"></div>
     <div class="pino-central"><i></i></div>
-    <button class="fab-voltar" onclick="fecharPino()">←</button>
-    <div class="folha">
+    <div class="busca-flutuante">
+      <button class="voltar" type="button" onclick="fecharPino()">←</button>
+      <div class="campo">
+        <input id="buscaPino" placeholder="Buscar endereço em Pelotas" autocomplete="off" aria-label="Buscar endereço no mapa" enterkeyhint="search">
+        <button type="button" class="limpar hidden" id="limparPino" aria-label="Limpar busca">×</button>
+        <div id="sugPino" class="sugestoes"></div>
+      </div>
+    </div>
+    <button class="fab-local" type="button" onclick="irParaMim('pino')" aria-label="Minha localização">◎</button>
+    <div class="folha" id="folhaPino">
       <div class="alca"></div>
-      <h2 class="centro">Insira seu destino</h2>
-      <p class="small centro">Arraste o mapa para mover o marcador</p>
-      <div class="campo-falso" id="pinoNome">Para onde?</div>
-      <button class="btn-preto" onclick="confirmarPino()">Confirmar destino</button>
+      <div class="folha-miolo">
+        <h2 class="centro">Ajustar no mapa</h2>
+        <p class="small centro" id="pinoDica">Arraste o mapa. O pino marca o ponto.</p>
+        <div class="campo-falso" id="pinoNome">Para onde?</div>
+        <p id="pinoFora" class="small erro hidden">Fora da área de entrega</p>
+        <button id="btnPino" class="btn-preto" type="button" onclick="confirmarPino()" disabled>Confirmar local</button>
+      </div>
     </div>
   </section>
 
   <!-- ===== Confirmar (preço antes) ===== -->
-  <section id="telaConfirmar" class="tela sobre hidden">
+  <section id="telaConfirmar" class="tela sobre mapa-tela hidden">
     <div id="mapa" class="mapa-cheio mapa-meio"></div>
-    <button class="fab-voltar" onclick="voltarDoConfirmar()">←</button>
+    <button class="fab-voltar" type="button" onclick="voltarDoConfirmar()">←</button>
+    <button class="fab-mapa" type="button" onclick="verRotaConfirmada()" aria-label="Centralizar a rota">⌖</button>
+    <button class="fab-local" type="button" onclick="irParaMim('confirmar')" aria-label="Minha localização">◎</button>
     <form id="deliveryForm" class="folha">
       <div class="alca"></div>
-      <div class="rota-resumo"><div><i class="t-a"></i><span id="resOrigem"></span></div><div><i class="t-b"></i><span id="resDestino"></span></div></div>
-      <label for="tipo">O que será entregue?</label>
-      <select id="tipo"></select>
-      <div class="opcao-preco">
-        <div class="op-icone">🛵</div>
-        <div class="op-txt"><b>É-Já Moto · <span id="tagCategoria">Entrega rápida</span></b><span id="km">Calculando…</span></div>
-        <strong id="valor">—</strong>
+      <div class="folha-miolo">
+        <div class="rota-resumo"><div><i class="t-a"></i><span id="resOrigem"></span></div><div><i class="t-b"></i><span id="resDestino"></span></div></div>
+        <div id="numsMapa"></div>
+        <label for="tipo">O que será entregue?</label>
+        <select id="tipo"></select>
+        <div class="opcao-preco">
+          <div class="op-icone">🛵</div>
+          <div class="op-txt"><b>É-Já Moto · <span id="tagCategoria">Entrega rápida</span></b><span id="km">Calculando…</span></div>
+          <strong id="valor">—</strong>
+        </div>
+        <p class="small">Preço calculado antes de confirmar. Pagamento direto ao motoboy.</p>
+        <button id="btnConfirmar" class="btn-preto" type="submit">Confirmar entrega</button>
       </div>
-      <p class="small">Preço calculado antes de confirmar. Pagamento direto ao motoboy.</p>
-      <button id="btnConfirmar" class="btn-preto" type="submit">Confirmar entrega</button>
     </form>
   </section>
 
   <!-- ===== Pedido em andamento ===== -->
-  <section id="pedido" class="tela sobre hidden" aria-live="polite">
+  <section id="pedido" class="tela sobre mapa-tela hidden" aria-live="polite">
     <div id="mapaPedido" class="mapa-cheio mapa-meio"></div>
-    <button class="fab-voltar" onclick="sairDoPedido()">←</button>
-    <div class="folha">
+    <button class="fab-voltar" type="button" onclick="sairDoPedido()">←</button>
+    <button class="fab-mapa" type="button" onclick="verRotaPedido()" aria-label="Ver coleta, entrega e motoboy">⌖</button>
+    <button class="fab-local" type="button" onclick="irParaMim('pedido')" aria-label="Minha localização">◎</button>
+    <div class="folha" id="folhaPedido">
       <div class="alca"></div>
-      <div id="estado" class="estado-titulo">Procurando um motoboy disponível…</div>
-      <div id="barraBuscaCli" class="barra-busca"><i></i></div>
-      <div id="codigoBox" class="codigo-box hidden">Código para o destinatário <b id="codigoTxt"></b></div>
-      <div id="resumo" class="small"></div>
-      <button id="btnWhats" class="btn-whats" onclick="compartilharWhats()">Compartilhar rastreio no WhatsApp</button>
-      <div id="avaliar" class="avaliar hidden">
-        <b>Como foi a entrega?</b>
-        <div class="estrelas" id="estrelas"></div>
-        <div id="avaliarMsg" class="small"></div>
+      <div class="folha-miolo">
+        <div id="estado" class="estado-titulo">Procurando um motoboy disponível…</div>
+        <div id="barraBuscaCli" class="barra-busca"><i></i></div>
+        <div id="codigoBox" class="codigo-box hidden">Código para o destinatário <b id="codigoTxt"></b></div>
+        <div id="resumo" class="small"></div>
+        <div class="folha-extra">
+          <button id="btnChat" class="btn-claro hidden" type="button" onclick="Chat.alternar()">Conversar <span id="chatBadge" class="chat-badge hidden">0</span></button>
+          <button id="btnWhats" class="btn-whats" type="button" onclick="compartilharWhats()">Compartilhar rastreio no WhatsApp</button>
+          <div id="avaliar" class="avaliar hidden">
+            <b>Como foi a entrega?</b>
+            <div class="estrelas" id="estrelas"></div>
+            <div id="avaliarMsg" class="small"></div>
+          </div>
+          <button id="btnCancelar" class="btn-claro" type="button" onclick="cancelarPedido()">Cancelar pedido</button>
+          <button id="btnNovo" class="btn-preto hidden" type="button" onclick="novoPedido()">Fazer outro pedido</button>
+        </div>
       </div>
-      <button id="btnCancelar" class="btn-claro" onclick="cancelarPedido()">Cancelar pedido</button>
-      <button id="btnNovo" class="btn-preto hidden" onclick="novoPedido()">Fazer outro pedido</button>
     </div>
   </section>
 
@@ -194,7 +252,7 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script src="shared/vendor/maplibre-gl-csp.js"></script>
 <script src="https://unpkg.com/@maplibre/maplibre-gl-leaflet@0.0.22/leaflet-maplibre-gl.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="shared/config.js"></script>
@@ -203,6 +261,7 @@
 <script src="shared/push.js"></script>
 <script src="shared/mapa.js"></script>
 <script src="shared/alerta.js"></script>
+<script src="shared/chat.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

@@ -61,11 +61,16 @@ insert into r select 'contestação deferida reaprova', status='aprovado', statu
 -- exclusão
 do $$ begin perform excluir_dados_usuario('00000000-0000-0000-0000-0000000000c2'); insert into r values ('usuário comum não chama exclusão direta', false, ''); exception when others then insert into r values ('usuário comum não chama exclusão direta', true, sqlerrm); end $$;
 reset role;
-insert into pedidos (cliente_id, retirada, entrega, ret_lat, ret_lng, ent_lat, ent_lng, item, distancia_km, preco, status)
-values ('00000000-0000-0000-0000-0000000000c2','Rua A 123','Rua B 456',-31.771234,-52.341234,-31.761234,-52.331234,'x',2,8,'entregue');
+insert into pedidos (cliente_id, retirada, entrega, ret_lat, ret_lng, ent_lat, ent_lng, item, distancia_km, preco, status,
+  ret_numero, ret_complemento, ent_numero, ent_complemento)
+values ('00000000-0000-0000-0000-0000000000c2','Rua A 123','Rua B 456',-31.771234,-52.341234,-31.761234,-52.331234,'x',2,8,'entregue',
+  '123','apto 2','456','casa azul');
+insert into mensagens (pedido_id, autor_id, texto)
+select id, '00000000-0000-0000-0000-0000000000c2', 'combinado na porta dos fundos' from pedidos where item='x' and preco=8;
 select excluir_dados_usuario('00000000-0000-0000-0000-0000000000c2');
 delete from auth.users where id='00000000-0000-0000-0000-0000000000c2';
-insert into r select 'pedido anonimizado e mantido', count(*)=1 and bool_and(cliente_id is null and retirada like '%removido%' and ret_lat = -31.77), max(retirada) from pedidos where preco=8 and item='x';
+insert into r select 'pedido anonimizado e mantido', count(*)=1 and bool_and(cliente_id is null and retirada like '%removido%' and ret_lat = -31.77 and ret_numero is null and ent_complemento is null), max(retirada) from pedidos where preco=8 and item='x';
+insert into r select 'mensagem do pedido anonimizada', count(*)=1 and bool_and(texto = 'Mensagem removida (LGPD)' and autor_id is null), max(texto) from mensagens m join pedidos p on p.id = m.pedido_id where p.item='x' and p.preco=8;
 insert into r select 'perfil apagado', count(*)=0, '' from profiles where id='00000000-0000-0000-0000-0000000000c2';
 insert into r select 'registro de exclusão', count(*)>=1, '' from solicitacoes_exclusao where user_hash = encode(extensions.digest('00000000-0000-0000-0000-0000000000c2','sha256'),'hex');
 insert into r select 'cron agendado', count(*)=2, string_agg(jobname, ',') from cron.job where jobname like 'eja_%';

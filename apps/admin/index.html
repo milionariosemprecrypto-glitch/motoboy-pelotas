@@ -67,6 +67,7 @@ td button.bloq { border-color:#ff3b30; color:#ff3b30; }
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="../shared/config.js"></script>
 <script src="../shared/auth.js"></script>
+<script src="../shared/geo.js"></script>
 <script>
 // Painel admin: o banco só responde se profiles.role = 'admin' (verificado nas RPCs e no RLS).
 iniciarAuth({ role: "cliente", exigirAceite: false, aoEntrar: async (u) => {
@@ -179,7 +180,8 @@ async function carregarPedidos() {
   if (error) return alert(erroMsg(error));
   data.forEach(p => {
     const tr = document.createElement("tr");
-    tr.append(td(dt(p.criado_em)), td(p.cliente), td(p.motoboy || "—"), td(p.retirada + " → " + p.entrega),
+    tr.append(td(dt(p.criado_em)), td(p.cliente), td(p.motoboy || "—"),
+      td(textoEndereco(p.retirada, p.ret_numero, p.ret_complemento) + " → " + textoEndereco(p.entrega, p.ent_numero, p.ent_complemento)),
       td(Number(p.distancia_km).toLocaleString("pt-BR")), td(money(p.preco)), td(p.status));
     tb.append(tr);
   });

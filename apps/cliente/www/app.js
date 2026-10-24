@@ -43,8 +43,8 @@ async function carregar(u) {
   db.from("profiles").select("nome").eq("id", u.id).maybeSingle().then(({ data }) => { if (data && data.nome) $("contaNome").textContent = data.nome; });
   montarServicos(); irAba("home"); atualizarLocal(false);
   iniciarPush("cliente", () => atualizarStatus());
-  autocompletar($("origem"), $("sugOrigem"), e => { origem = e; seguirSePronto(); });
-  autocompletar($("destino"), $("sugDestino"), e => { destino = e; seguirSePronto(); });
+  ligarBusca();
+  marcarVersaoDebug();
   await carregarHistorico();
   const { data } = await db.rpc("meu_pedido_ativo");
   if (data && data[0]) mostrarPedido(data[0]);
@@ -56,22 +56,70 @@ function irAba(a) {
     show(x, x === a); $("nav" + x[0].toUpperCase() + x.slice(1)).classList.toggle("on", x === a);
   });
   if (a === "atividade") carregarHistorico();
-  if (a === "conta") { $("contaCasa").textContent = (guardar.ler("casa") || {}).nome || "Adicionar"; $("contaTrabalho").textContent = (guardar.ler("trabalho") || {}).nome || "Adicionar"; }
+  if (a === "conta") {
+    const casa = guardar.ler("casa"), trab = guardar.ler("trabalho");
+    $("contaCasa").textContent = casa ? textoEndereco(casa.nome, casa.numero, casa.complemento) : "Adicionar";
+    $("contaTrabalho").textContent = trab ? textoEndereco(trab.nome, trab.numero, trab.complemento) : "Adicionar";
+  }
   window.scrollTo(0, 0);
 }
-const telaSobre = (id, on) => { show(id, on); document.body.classList.toggle("sem-nav", !!document.querySelector(".tela.sobre:not(.hidden)")); };
+const telaSobre = (id, on) => {
+  show(id, on);
+  document.body.classList.toggle("sem-nav", !!document.querySelector(".tela.sobre:not(.hidden)"));
+  document.documentElement.classList.toggle("plano-aberto", !!($("telaPlano") && !$("telaPlano").classList.contains("hidden")));
+};
 
 // ---------- Localização atual ----------
 function atualizarLocal(avisar) {
-  if (!navigator.geolocation) return;
+  $("locAtual").textContent = "Buscando localização…";
+  if (!navigator.geolocation) {
+    $("locAtual").textContent = "GPS indisponível";
+    if (avisar) toast("Este aparelho não informou a localização.");
+    return;
+  }
   navigator.geolocation.getCurrentPosition(async p => {
-    aqui = { lat: p.coords.latitude, lng: p.coords.longitude };
-    if (!dentroPelotas(aqui.lat, aqui.lng)) { $("locAtual").textContent = "Fora de Pelotas"; return; }
-    const nome = await nomeDoPonto(aqui.lat, aqui.lng);
+    aqui = { lat: p.coords.latitude, lng: p.coords.longitude, numero: "S/N", complemento: "" };
+    const fora = !dentroPelotas(aqui.lat, aqui.lng);
+    const nome = await nomeDoPonto(aqui.lat, aqui.lng, { timeout: 4000 });
     aqui.nome = nome || "Minha localização";
+    aqui.fora = fora;
     $("locAtual").textContent = aqui.nome;
+    mostrarAvisoArea(fora);
+    if (avisar && fora) toast(textoFora());
     montarLugares();
-  }, () => avisar && toast("Ative a localização para usar seu endereço atual."), { enableHighAccuracy: true, timeout: 10000 });
+    pintarPontosAzuis();
+    aplicarGpsNoPlano();
+  }, err => {
+    const negado = err && err.code === 1;
+    const tempo = err && err.code === 3;
+    $("locAtual").textContent = negado ? "Localização bloqueada" : tempo ? "Tempo esgotado" : "Sem localização";
+    if (avisar) toast(negado ? "Permita a localização para usar seu endereço." : tempo ? "O GPS demorou demais. Tente de novo." : "Não foi possível ler a localização.");
+  }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 15000 });
+}
+function abrirMenuLocal() {
+  const menu = $("menuLocal");
+  const abre = menu.classList.contains("hidden");
+  show("menuLocal", abre);
+  if (!abre) return;
+  atualizarLocal(false);
+  const box = $("menuRecentes");
+  box.textContent = "";
+  sugestoesRecentes().slice(0, 4).forEach(r => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = "🕒 " + (r.titulo || r.nome);
+    b.onclick = () => { fecharMenuLocal(); escolherDestino(r); };
+    box.append(b);
+  });
+}
+function fecharMenuLocal() { show("menuLocal", false); }
+function usarGpsComoRetirada() {
+  fecharMenuLocal();
+  atualizarLocal(true);
+  abrirPlano();
+  if (aqui && aqui.nome && dentroPelotas(aqui.lat, aqui.lng)) {
+    definirLado("origem", { nome: aqui.nome, lat: aqui.lat, lng: aqui.lng, numero: "S/N", tipo: "poi" });
+  }
 }
 
 // ---------- Início: lugares salvos, recentes, serviços ----------
@@ -79,10 +127,170 @@ function recentes() {
   const vistos = new Set(), out = [];
   for (const p of historico) {
     if (!p.ent_lat || vistos.has(p.entrega)) continue;
-    vistos.add(p.entrega); out.push({ nome: p.entrega, lat: p.ent_lat, lng: p.ent_lng });
+    vistos.add(p.entrega);
+    out.push({ nome: p.entrega, lat: p.ent_lat, lng: p.ent_lng, numero: p.ent_numero || "", complemento: p.ent_complemento || "" });
     if (out.length >= 8) break;
   }
   return out;
+}
+function recentesLocais() {
+  const lista = guardar.ler("recentes_end");
+  return Array.isArray(lista) ? lista.filter(e => e && e.nome && e.lat != null) : [];
+}
+function lembrarRecente(e) {
+  if (!e || !e.nome || e.lat == null) return;
+  const item = {
+    nome: e.nome, lat: e.lat, lng: e.lng, numero: e.numero && e.numero !== "S/N" ? e.numero : "",
+    complemento: e.complemento || "", bairro: e.bairro || "", cidade: e.cidade || "Pelotas", uf: e.uf || "RS",
+    cep: e.cep || "", tipo: "recente"
+  };
+  const linhas = linhasEndereco(item);
+  item.titulo = linhas.titulo;
+  item.subtitulo = linhas.subtitulo;
+  const chave = semAcento(item.nome) + "|" + item.numero;
+  const lista = recentesLocais().filter(x => semAcento(x.nome) + "|" + (x.numero || "") !== chave);
+  lista.unshift(item);
+  guardar.gravar("recentes_end", lista.slice(0, 8));
+}
+function sugestoesRecentes() {
+  const vistos = new Set(), out = [];
+  function add(e) {
+    if (!e || e.lat == null || !e.nome) return;
+    const k = semAcento(e.nome) + "|" + (e.numero || "");
+    if (vistos.has(k)) return;
+    vistos.add(k);
+    const linhas = e.titulo ? { titulo: e.titulo, subtitulo: e.subtitulo || "" } : linhasEndereco(e);
+    out.push(Object.assign({}, e, { tipo: "recente", titulo: linhas.titulo, subtitulo: linhas.subtitulo || "Pelotas - RS" }));
+  }
+  recentesLocais().forEach(add);
+  recentes().forEach(add);
+  return out.slice(0, 8);
+}
+function ligarBusca() {
+  if ($("origem").dataset.busca) return;
+  $("origem").dataset.busca = "1";
+  autocompletar($("origem"), $("sugOrigem"), e => definirLado("origem", e), t => marcarNoMapa("origem", t), { bias: biasBusca, recentes: sugestoesRecentes });
+  autocompletar($("destino"), $("sugDestino"), e => definirLado("destino", e), t => marcarNoMapa("destino", t), { bias: biasBusca, recentes: sugestoesRecentes });
+  $("origem").addEventListener("focus", () => focarCampoPlano("origem"));
+  $("destino").addEventListener("focus", () => focarCampoPlano("destino"));
+  $("origem").addEventListener("input", () => {
+    $("origem").dataset.gps = "";
+    origemGps = false;
+    if ($("origem").dataset.escolhido !== "1") limparDetalhe("origem");
+    atualizarLimpar();
+  });
+  $("destino").addEventListener("input", () => { if ($("destino").dataset.escolhido !== "1") limparDetalhe("destino"); atualizarLimpar(); });
+  $("limparOrigem").onclick = () => limparCampo("origem");
+  $("limparDestino").onclick = () => limparCampo("destino");
+  ["sugOrigem", "sugDestino"].forEach(id => {
+    const lista = $(id);
+    const input = $(id === "sugOrigem" ? "origem" : "destino");
+    if (!lista || lista._ejaObs) return;
+    lista._ejaObs = new MutationObserver(() => {
+      if (document.activeElement === input) encaixarBusca(input);
+    });
+    lista._ejaObs.observe(lista, { childList: true });
+  });
+  ligarSn("origem"); ligarSn("destino");
+  atualizarLimpar();
+}
+// A caixa da rota não muda de tamanho. Só a lista de sugestões ganha um max-height.
+function listaDoFoco(el) {
+  if (!el) return null;
+  if (el.id === "origem" || (el.closest && el.closest("#slotOrigem"))) return $("sugOrigem");
+  if (el.id === "destino" || (el.closest && el.closest("#slotDestino"))) return $("sugDestino");
+  const campo = el.closest && el.closest(".campo");
+  return campo ? campo.querySelector(".sugestoes") : null;
+}
+function focarCampoPlano(lado) {
+  const tela = $("telaPlano");
+  if (tela) tela.dataset.foco = lado;
+  const outra = $(lado === "origem" ? "sugDestino" : "sugOrigem");
+  if (outra && document.activeElement === $(lado)) outra.innerHTML = "";
+  encaixarBusca($(lado));
+}
+// max-height da lista = visualViewport até o fim, menos a base da caixa.
+// Valor estranho (NaN, negativo, minúsculo ou enorme) cai em 220px. A caixa não é tocada.
+function alturaListaSugestoes(caixa) {
+  const base = caixa ? caixa.getBoundingClientRect().bottom : 0;
+  const vv = window.visualViewport;
+  const fundo = vv ? vv.offsetTop + vv.height : window.innerHeight;
+  const h = Math.floor(fundo - base - 8);
+  if (h >= 140 && h <= 560) return h;
+  return 280;
+}
+function encaixarBusca(el) {
+  const tela = $("telaPlano");
+  if (!el || !tela || tela.classList.contains("hidden") || !tela.contains(el)) {
+    limitarSugestaoPino();
+    return;
+  }
+  const lista = listaDoFoco(el);
+  const caixa = tela.querySelector(".caixa-rota");
+  if (lista) lista.style.maxHeight = alturaListaSugestoes(caixa) + "px";
+  limitarSugestaoPino();
+}
+function formatarDebugBusca(d) {
+  if (!d) return "Nenhuma busca ainda.\nDigite a retirada ou a entrega.\nGPS fora de Pelotas não entra na busca.";
+  const linhas = [];
+  linhas.push("consulta: " + (d.consulta || ""));
+  linhas.push("evento: " + (d.evento || "?"));
+  linhas.push("via: " + (d.transporte || "?"));
+  linhas.push("viés usado: " + (d.biasUsado || "") + (d.gpsIgnorado ? "  (GPS fora, ignorado " + d.biasRecebido + ")" : ""));
+  if (d.origemPagina) linhas.push("página: " + d.origemPagina + (d.online === false ? "  offline" : "  online"));
+  (d.chamadas || []).forEach(c => {
+    linhas.push("");
+    linhas.push((c.fonte || "rede") + "  " + (c.erro || ("HTTP " + c.status)));
+    linhas.push(c.url || "");
+    linhas.push("brutos: " + c.brutos + "   depois do filtro: " + c.depois);
+    if (c.descartes && c.descartes.length) linhas.push("descartes: " + c.descartes.slice(0, 6).join(" | "));
+  });
+  if (d.notaRuido) linhas.push(d.notaRuido);
+  linhas.push("na lista: " + (d.naLista != null ? d.naLista : "?"));
+  if (d.erro) linhas.push("erro: " + d.erro);
+  linhas.push("Toque de novo em v" + APP_VERSAO + " para fechar.");
+  return linhas.join("\n");
+}
+function pintarPainelDebug() {
+  const painel = $("painelDebugBusca");
+  if (!painel || painel.classList.contains("hidden")) return;
+  painel.textContent = formatarDebugBusca(window.__ejaUltimaBusca);
+}
+window.registrarDebugBusca = function () { pintarPainelDebug(); };
+function marcarVersaoDebug() {
+  const el = $("planoDebug");
+  if (!el) return;
+  el.textContent = "v" + APP_VERSAO;
+  const debug = document.documentElement.classList.contains("eja-debug");
+  el.classList.toggle("hidden", !debug);
+  if (!el.dataset.ligado) {
+    el.dataset.ligado = "1";
+    el.addEventListener("click", () => {
+      const painel = $("painelDebugBusca");
+      if (!painel) return;
+      painel.classList.toggle("hidden");
+      pintarPainelDebug();
+    });
+  }
+}
+document.addEventListener("eja-insets", marcarVersaoDebug);
+function limitarSugestaoPino() {
+  const lista = $("sugPino"), input = $("buscaPino"), tela = $("telaPino");
+  if (!lista || !input || !tela || tela.classList.contains("hidden")) return;
+  const vv = window.visualViewport;
+  const fundo = vv ? vv.offsetTop + vv.height : window.innerHeight;
+  const base = input.getBoundingClientRect().bottom;
+  lista.style.maxHeight = Math.max(96, Math.floor(fundo - base - 16)) + "px";
+}
+window.encaixarBusca = encaixarBusca;
+function biasBusca() {
+  // Manda a posição para o diagnóstico. geo.js só usa o GPS se ele estiver em Pelotas.
+  if (aqui && isFinite(aqui.lat) && isFinite(aqui.lng)) return [aqui.lat, aqui.lng];
+  return null;
+}
+function nomeCheio(e) {
+  if (!e) return "";
+  return [e.nome, e.bairro].filter(Boolean).join(" · ");
 }
 function itemLugar(icone, titulo, sub, onclick) {
   const b = document.createElement("button"); b.className = "item-lista"; b.onclick = onclick;
@@ -92,146 +300,706 @@ function itemLugar(icone, titulo, sub, onclick) {
 function montarLugares() {
   const el = $("lugares"); el.textContent = "";
   const r = recentes()[0];
-  if (r) el.append(itemLugar("🕒", r.nome.split(" · ")[0], r.nome.split(" · ")[1] || "Pelotas", () => escolherDestino(r)));
+  if (r) { const rot = rotuloLugar(r); el.append(itemLugar("🕒", rot.titulo, rot.sub, () => escolherDestino(r))); }
   const casa = guardar.ler("casa");
-  el.append(itemLugar("🏠", "Casa", casa ? casa.nome : "Adicionar endereço de casa", () => casa ? escolherDestino(casa) : definirLugar("casa")));
+  el.append(itemLugar("🏠", "Casa", casa ? textoEndereco(casa.nome, casa.numero, casa.complemento) : "Adicionar endereço de casa", () => casa ? escolherDestino(casa) : definirLugar("casa")));
   const trab = guardar.ler("trabalho");
-  if (trab) el.append(itemLugar("💼", "Trabalho", trab.nome, () => escolherDestino(trab)));
+  if (trab) el.append(itemLugar("💼", "Trabalho", textoEndereco(trab.nome, trab.numero, trab.complemento), () => escolherDestino(trab)));
   show("cardBoasVindas", historico.length === 0);
 }
 function montarServicos() {
   const tile = c => { const b = document.createElement("button"); b.className = "servico";
     b.innerHTML = `<span class="bolha">${c.icone}</span><span></span>`; b.lastChild.textContent = c.nome;
-    b.onclick = () => { categoria = c; $("categoriaAtual").textContent = c.nome; irAba("home"); abrirPlano(); }; return b; };
+    b.onclick = () => { categoria = c; if ($("categoriaAtual")) $("categoriaAtual").textContent = c.nome; irAba("home"); abrirPlano(); }; return b; };
   $("servicos").textContent = ""; CATEGORIAS.slice(0, 5).forEach(c => $("servicos").append(tile(c)));
   $("gradeServicos").textContent = ""; CATEGORIAS.forEach(c => $("gradeServicos").append(tile(c)));
 }
 function definirLugar(tipo) {
+  definindo = tipo;
   abrirPlano();
   $("destino").placeholder = "Digite o endereço de " + (tipo === "casa" ? "casa" : "trabalho");
   $("destino").focus();
-  definindo = tipo;
+  atualizarBotaoPlano();
 }
 let definindo = null;
 function usarLugar(tipo) { const l = guardar.ler(tipo); if (l) escolherDestino(l); else definirLugar(tipo); }
 function maisTarde() { toast("Agendamento chega em breve! Por enquanto, as entregas são para agora."); }
 
 // ---------- Planejar ----------
+let origemGps = false;
+function aplicarGpsNoPlano() {
+  const campo = $("origem");
+  const tela = $("telaPlano");
+  if (!campo || !tela || tela.classList.contains("hidden")) return;
+  const ocupado = campo.dataset.gps !== "1" && !!origem && !origemGps;
+  if (ocupado) return;
+  if (!aqui) return;
+  const fora = !dentroPelotas(aqui.lat, aqui.lng);
+  mostrarAvisoArea(fora);
+  if (!aqui.nome) {
+    campo.value = "Buscando localização…";
+    campo.dataset.gps = "1";
+    campo.dataset.escolhido = "";
+    atualizarLimpar();
+    return;
+  }
+  origem = { nome: aqui.nome, lat: aqui.lat, lng: aqui.lng, numero: "S/N", complemento: "", tipo: "poi", fora: fora };
+  origemGps = true;
+  campo.value = textoCampo(aqui.nome, "");
+  campo.dataset.escolhido = fora ? "" : "1";
+  campo.dataset.gps = "1";
+  atualizarLimpar();
+  if (!$("destino").value && (document.activeElement === campo || document.activeElement === document.body)) $("destino").focus();
+}
 function abrirPlano() {
   telaSobre("telaPlano", true);
-  if (!origem && aqui && aqui.nome) { origem = { ...aqui }; $("origem").value = aqui.nome; $("origem").dataset.escolhido = "1"; }
-  const lista = $("listaRecentes"); lista.textContent = "";
-  const base = origem || aqui;
-  const rec = recentes();
-  if (!rec.length) lista.innerHTML = '<p class="small" style="padding:8px 4px">Seus endereços recentes aparecem aqui.</p>';
-  rec.forEach(r => {
-    const it = itemLugar("🕒", r.nome.split(" · ")[0], r.nome.split(" · ")[1] || "Pelotas", () => escolherDestino(r));
-    if (base) it.querySelector("i").insertAdjacentHTML("beforeend", `<small>${kmTxt(dist(base, r))}</small>`);
-    lista.append(it);
+  $("telaPlano").classList.toggle("plano-salvar", !!definindo);
+  if (!definindo) show("blocoSalvar", false);
+  marcarVersaoDebug();
+  if (aqui && aqui.lat != null) mostrarAvisoArea(!dentroPelotas(aqui.lat, aqui.lng));
+  if (origem && $("origem").dataset.gps !== "1") {
+    $("origem").value = textoCampo(origem.nome, origem.numero);
+    $("origem").dataset.escolhido = "1";
+  } else aplicarGpsNoPlano();
+  if (destino && destino.nome) {
+    $("destino").value = textoCampo(destino.nome, destino.numero);
+    $("destino").dataset.escolhido = "1";
+  }
+  atualizarBotaoPlano();
+  atualizarLimpar();
+  clearTimeout(focoPlano);
+  focoPlano = setTimeout(() => {
+    const ativo = document.activeElement;
+    if (ativo && ativo.closest && ativo.closest("#telaPlano") && ativo.matches("input, textarea")) return;
+    ($("origem").value ? $("destino") : $("origem")).focus();
+  }, 50);
+}
+let focoPlano = null;
+function fecharPlano() {
+  alojarNumeros(false);
+  show("blocoSalvar", false);
+  $("telaPlano").classList.remove("plano-salvar");
+  telaSobre("telaPlano", false);
+  definindo = null;
+  $("destino").placeholder = "Para onde?";
+  atualizarBotaoPlano();
+}
+function escolherDestino(e) { definirLado("destino", e); }
+function sufixo(lado) { return lado === "origem" ? "Origem" : "Destino"; }
+function rotuloLugar(e) {
+  const partes = String(e.nome || "").split(" · ");
+  const extra = [e.numero === "S/N" ? "S/N" : e.numero ? "nº " + e.numero : "", e.complemento].filter(Boolean).join(" · ");
+  return { titulo: partes[0] || e.nome, sub: [partes[1], extra].filter(Boolean).join(" · ") || "Pelotas" };
+}
+function ligarSn(lado) {
+  const s = sufixo(lado), sn = $("sn" + s), num = $("num" + s);
+  sn.onchange = () => { num.disabled = sn.checked; if (sn.checked) num.value = ""; };
+}
+function preencherDetalhe(lado, obj) {
+  const s = sufixo(lado);
+  show("det" + s, true);
+  const sn = obj.numero === "S/N";
+  $("sn" + s).checked = sn;
+  $("num" + s).disabled = sn;
+  $("num" + s).value = sn ? "" : (obj.numero || "");
+  $("comp" + s).value = obj.complemento || "";
+}
+function limparDetalhe(lado) {
+  const s = sufixo(lado);
+  show("det" + s, false);
+  $("sn" + s).checked = false;
+  $("num" + s).disabled = false;
+  $("num" + s).value = "";
+  $("comp" + s).value = "";
+  if (lado === "origem") origem = null; else destino = null;
+}
+function limparCampo(lado) {
+  const campo = $(lado);
+  campo.value = "";
+  campo.dataset.escolhido = "";
+  campo.dataset.gps = "";
+  if (lado === "origem") origemGps = false;
+  limparDetalhe(lado);
+  const lista = $("sug" + sufixo(lado));
+  if (lista) lista.innerHTML = "";
+  atualizarLimpar();
+  if (campo._ejaRecentes) campo._ejaRecentes();
+  campo.focus();
+}
+function atualizarLimpar() {
+  show("limparOrigem", !!$("origem").value);
+  show("limparDestino", !!$("destino").value);
+  if ($("limparPino") && $("buscaPino")) show("limparPino", !!$("buscaPino").value);
+}
+function numeroDoTexto(e) {
+  return { numero: e.numero || "S/N", complemento: e.complemento || "" };
+}
+function mostrarAvisoArea(fora) {
+  const extra = fora ? ". Você ainda pode buscar endereços em Pelotas." : "";
+  ["avisoAreaHome", "avisoAreaPlano"].forEach(id => {
+    const el = $(id);
+    if (!el) return;
+    el.textContent = fora ? textoFora() + extra : "";
+    el.classList.toggle("hidden", !fora);
   });
-  setTimeout(() => (origem ? $("destino") : $("origem")).focus(), 50);
 }
-function fecharPlano() { telaSobre("telaPlano", false); definindo = null; $("destino").placeholder = "Para onde?"; }
-function escolherDestino(e) {
-  destino = { nome: e.nome, lat: e.lat, lng: e.lng };
-  $("destino").value = e.nome; $("destino").dataset.escolhido = "1";
-  if (!origem) { abrirPlano(); toast("Agora escolha o endereço de retirada."); $("origem").focus(); return; }
-  seguirSePronto();
+function pontoFora(p) {
+  return !!(p && p.lat != null && (p.fora || !dentroPelotas(p.lat, p.lng)));
 }
-function seguirSePronto() {
-  if (definindo && destino) { guardar.gravar(definindo, destino); toast((definindo === "casa" ? "Casa" : "Trabalho") + " salvo!");
-    definindo = null; destino = null; $("destino").value = ""; fecharPlano(); montarLugares(); return; }
-  if (origem && destino && $("origem").dataset.escolhido && $("destino").dataset.escolhido) abrirConfirmar();
+function definirLado(lado, e) {
+  if (e && (e.fora || (e.lat != null && !dentroPelotas(e.lat, e.lng)))) {
+    toast(textoFora());
+    return;
+  }
+  const extra = numeroDoTexto(e);
+  const obj = {
+    nome: e.nome, lat: e.lat, lng: e.lng, numero: extra.numero, complemento: extra.complemento,
+    bairro: e.bairro || "", cidade: e.cidade || "", uf: e.uf || "", cep: e.cep || "", tipo: e.tipo || ""
+  };
+  if (lado === "origem") origem = obj; else destino = obj;
+  const campo = $(lado);
+  if (campo) {
+    campo.value = textoCampo(e.nome, extra.numero);
+    campo.dataset.escolhido = "1";
+    campo.dataset.gps = "";
+    if (lado === "origem") origemGps = false;
+  }
+  lembrarRecente(obj);
+  atualizarLimpar();
+  if (lado === "destino" && !origem && !definindo) {
+    if ($("telaPlano").classList.contains("hidden")) abrirPlano();
+    if (!origem) { toast("Agora escolha o endereço de retirada."); $("origem").focus(); return; }
+  }
+  if (definindo) {
+    $("telaPlano").classList.add("plano-salvar");
+    show("blocoSalvar", true);
+    preencherDetalhe(lado, obj);
+    if ($("btnContinuar")) show("btnContinuar", true);
+    return;
+  }
+  if (origem && destino && origem.lat != null && destino.lat != null && origem.numero && destino.numero) {
+    if (pontoFora(origem) || pontoFora(destino)) { toast(textoFora()); return; }
+    abrirConfirmar();
+  }
+}
+function limparDetalheVisual(lado) {
+  const s = sufixo(lado);
+  show("det" + s, false);
+  $("sn" + s).checked = false;
+  $("num" + s).disabled = false;
+  $("num" + s).value = "";
+  $("comp" + s).value = "";
+}
+function trocarPontos() {
+  const o = origem, d = destino;
+  const vo = $("origem").value, vd = $("destino").value;
+  const eo = $("origem").dataset.escolhido, ed = $("destino").dataset.escolhido;
+  origem = d; destino = o;
+  $("origem").value = vd; $("destino").value = vo;
+  $("origem").dataset.escolhido = ed || "";
+  $("destino").dataset.escolhido = eo || "";
+  if (origem && origem.numero) preencherDetalhe("origem", origem); else limparDetalheVisual("origem");
+  if (destino && destino.numero) preencherDetalhe("destino", destino); else limparDetalheVisual("destino");
+  atualizarLimpar();
+}
+function alojarNumeros(noMapa) {
+  const o = $("detOrigem"), d = $("detDestino");
+  if (!o || !d) return;
+  if (noMapa && $("numsMapa")) {
+    $("numsMapa").append(o, d);
+    if (origem) preencherDetalhe("origem", origem); else show("detOrigem", false);
+    if (destino) preencherDetalhe("destino", destino); else show("detDestino", false);
+  } else {
+    const guarda = $("blocoSalvar");
+    if (guarda) guarda.insertBefore(d, guarda.firstChild);
+    if (guarda) guarda.insertBefore(o, guarda.firstChild);
+    if (!definindo) { show("detOrigem", false); show("detDestino", false); show("blocoSalvar", false); }
+  }
+}
+function lerDetalhe(lado) {
+  const s = sufixo(lado);
+  const painel = $("det" + s);
+  if (painel && painel.classList.contains("hidden")) {
+    const obj = lado === "origem" ? origem : destino;
+    if (!obj) return { ok: false, erro: "Escolha o endereço." };
+    return validarDetalhe(obj.numero === "S/N" ? "" : (obj.numero || ""), obj.numero === "S/N", obj.complemento);
+  }
+  return validarDetalhe($("num" + s).value, $("sn" + s).checked, $("comp" + s).value);
+}
+function atualizarBotaoPlano() {
+  const b = $("btnContinuar");
+  if (b) b.textContent = definindo ? "Salvar este endereço" : "Continuar";
+}
+function continuarPlano() {
+  if (definindo) {
+    if (!destino || $("destino").dataset.escolhido !== "1") { toast("Escolha o endereço na lista ou no mapa."); return; }
+    const b = lerDetalhe("destino");
+    if (!b.ok) { toast(b.erro); $("numDestino").focus(); return; }
+    if (pontoFora(destino)) { toast(textoFora()); return; }
+    guardar.gravar(definindo, { nome: destino.nome, lat: destino.lat, lng: destino.lng, numero: b.numero, complemento: b.complemento });
+    toast((definindo === "casa" ? "Casa" : "Trabalho") + " salvo!");
+    definindo = null; destino = null; $("destino").value = ""; limparDetalhe("destino");
+    fecharPlano(); montarLugares();
+    const casaSalva = guardar.ler("casa"), trabSalvo = guardar.ler("trabalho");
+    if ($("contaCasa")) $("contaCasa").textContent = casaSalva ? textoEndereco(casaSalva.nome, casaSalva.numero, casaSalva.complemento) : "Adicionar";
+    if ($("contaTrabalho")) $("contaTrabalho").textContent = trabSalvo ? textoEndereco(trabSalvo.nome, trabSalvo.numero, trabSalvo.complemento) : "Adicionar";
+    return;
+  }
+  if (!origem || $("origem").dataset.escolhido !== "1") { toast("Escolha o endereço de retirada na lista."); $("origem").focus(); return; }
+  if (!destino || $("destino").dataset.escolhido !== "1") { toast("Escolha o endereço de entrega na lista."); $("destino").focus(); return; }
+  const a = lerDetalhe("origem"), b = lerDetalhe("destino");
+  if (!a.ok) { toast("Retirada: " + a.erro); $("numOrigem").focus(); return; }
+  if (!b.ok) { toast("Entrega: " + b.erro); $("numDestino").focus(); return; }
+  if (pontoFora(origem) || pontoFora(destino)) { toast(textoFora()); return; }
+  origem.numero = a.numero; origem.complemento = a.complemento;
+  destino.numero = b.numero; destino.complemento = b.complemento;
+  abrirConfirmar();
 }
 
-// ---------- Escolher no mapa (pino arrastável) ----------
-function abrirPinoMapa() {
+// ---------- Ajustar no mapa (pino fixo no centro) ----------
+let pinoLado = "destino", pinoTextoFixo = "", pinoAtual = null, pinoBuscaLigada = false;
+let pinoAlvo = null, cameraPropria = 0, pinoNomeando = false, pinoSeq = 0, nomearTimer = null;
+let pinoArrastando = false, pinoAbort = null;
+const PINO_NOMEAR_MS = 500;
+function marcarNoMapa(lado, texto) { abrirPinoMapa(lado, texto); }
+function abrirAjusteMapa() {
+  const foco = $("telaPlano") && $("telaPlano").dataset.foco === "origem" ? "origem" : "destino";
+  const campo = $(foco);
+  const texto = campo && campo.dataset.escolhido === "1" ? "" : ((campo && campo.value.trim()) || "");
+  abrirPinoMapa(foco, texto);
+}
+function paddingPino() {
+  const el = mapaPino.getContainer();
+  const H = el.clientHeight || window.innerHeight || 700;
+  const W = el.clientWidth || window.innerWidth || 360;
+  const folha = $("folhaPino");
+  const fh = folha ? (parseFloat(folha.style.height) || folha.getBoundingClientRect().height || H * 0.42) : H * 0.42;
+  const top = 84;
+  let bottom = Math.max(0, fh);
+  if (top + bottom > H - 96) bottom = Math.max(0, H - 96 - top);
+  return { top, bottom, left: Math.min(24, W * 0.06), right: Math.min(24, W * 0.06) };
+}
+function posicionarPinoVisual() {
+  const pin = document.querySelector("#telaPino .pino-central");
+  if (!pin || !mapaPino) return { x: 0, y: 0 };
+  const el = mapaPino.getContainer();
+  const H = el.clientHeight || window.innerHeight || 700;
+  const W = el.clientWidth || window.innerWidth || 360;
+  const pad = paddingPino();
+  const y = (pad.top + H - pad.bottom) / 2;
+  const x = (pad.left + W - pad.right) / 2;
+  pin.style.top = y + "px";
+  pin.style.left = x + "px";
+  return { x, y };
+}
+function pontoDoPino() {
+  if (!mapaPino) return { lat: PELOTAS[0], lng: PELOTAS[1] };
+  const pt = posicionarPinoVisual();
+  return mapaPino.containerPointToLatLng([pt.x, pt.y]);
+}
+function centralizarPino(ll, zoom, duracao) {
+  if (!mapaPino || !ll) return;
+  pinoAlvo = { lat: +ll.lat, lng: +ll.lng };
+  posicionarPinoVisual();
+  cameraPropria++;
+  mapaPino.setView([pinoAlvo.lat, pinoAlvo.lng], zoom == null ? mapaPino.getZoom() : zoom, {
+    padding: paddingPino(), duration: duracao || 0, bearing: 0, pitch: 0
+  });
+  setTimeout(() => { cameraPropria = Math.max(0, cameraPropria - 1); }, (duracao || 0) + 80);
+}
+function levantarPino(sim) {
+  const pin = document.querySelector("#telaPino .pino-central");
+  if (pin) pin.classList.toggle("levantado", !!sim);
+}
+function pertoDoPino(a, b, metros) {
+  if (!a || !b || a.lat == null || b.lat == null) return false;
+  return distMetros(a.lat, a.lng, [b.lat, b.lng]) < metros;
+}
+function atualizarBotaoPino() {
+  const btn = $("btnPino");
+  const fora = pinoAtual && pinoAtual.fora;
+  if (btn) btn.disabled = !!(pinoArrastando || pinoNomeando || !pinoAtual || !pinoAtual.nome || fora);
+  show("pinoFora", !!fora);
+}
+function agendarNomear(opcoes) {
+  clearTimeout(nomearTimer);
+  pinoNomeando = true;
+  atualizarBotaoPino();
+  if (!(opcoes && opcoes.manterTexto)) $("pinoNome").textContent = "Buscando endereço…";
+  nomearTimer = setTimeout(nomearPino, PINO_NOMEAR_MS);
+}
+function abrirPinoMapa(lado, texto) {
+  pinoLado = lado === "origem" ? "origem" : "destino";
+  pinoTextoFixo = texto || "";
   telaSobre("telaPino", true);
-  if (!mapaPino) { mapaPino = criarMapa("mapaPino"); mapaPino.on("moveend", nomearPino); }
-  setTimeout(() => { mapaPino.invalidateSize(); const c = destino || aqui; mapaPino.setView(c ? [c.lat, c.lng] : PELOTAS, 16); }, 80);
+  if (!mapaPino) {
+    mapaPino = criarMapa("mapaPino", { rotacao: false, limite: bboxBusca(), zoom: 16 });
+    mapaPino.on("dragstart", () => {
+      if ($("telaPino").classList.contains("hidden")) return;
+      pinoArrastando = true;
+      pinoSeq++;
+      if (pinoAbort) { try { pinoAbort.abort(); } catch (e) {} }
+      clearTimeout(nomearTimer);
+      pinoNomeando = true;
+      levantarPino(true);
+      atualizarBotaoPino();
+    });
+    mapaPino.on("moveend", () => {
+      if ($("telaPino").classList.contains("hidden")) return;
+      if (pinoArrastando) { pinoArrastando = false; levantarPino(false); }
+      const novo = pontoDoPino();
+      const mesmo = pinoAlvo && Math.abs(novo.lat - pinoAlvo.lat) < 0.00004 && Math.abs(novo.lng - pinoAlvo.lng) < 0.00004;
+      if (cameraPropria > 0 || mesmo) {
+        if (mesmo) pinoAlvo = { lat: novo.lat, lng: novo.lng };
+        return;
+      }
+      pinoTextoFixo = "";
+      pinoAlvo = { lat: novo.lat, lng: novo.lng };
+      if (pinoAtual && pinoAtual.nome && !pinoAtual.fora && pertoDoPino(pinoAtual, novo, 12)) {
+        pinoAtual = Object.assign({}, pinoAtual, { lat: novo.lat, lng: novo.lng });
+        pinoNomeando = false;
+        atualizarBotaoPino();
+        return;
+      }
+      agendarNomear();
+    });
+  }
+  if (!pinoBuscaLigada) {
+    pinoBuscaLigada = true;
+    autocompletar($("buscaPino"), $("sugPino"), e => {
+      pinoTextoFixo = "";
+      pinoSeq++;
+      if (pinoAbort) { try { pinoAbort.abort(); } catch (err) {} }
+      clearTimeout(nomearTimer);
+      pinoNomeando = false;
+      centralizarPino(e, 17, 0);
+      const c = pontoDoPino();
+      const linha = typeof linhaDoPino === "function" ? linhaDoPino(e.nome, e.numero, e.bairro) : (e.titulo || e.nome);
+      pinoAtual = {
+        lat: c.lat, lng: c.lng, nome: e.nome, numero: e.numero || "S/N",
+        complemento: e.complemento || "", bairro: e.bairro || "", fora: false, tipo: e.tipo || "poi"
+      };
+      $("pinoNome").textContent = linha || e.titulo || e.nome;
+      $("buscaPino").value = e.titulo || e.nome;
+      atualizarLimpar();
+      atualizarBotaoPino();
+    }, t => {
+      pinoTextoFixo = t;
+      $("buscaPino").value = t;
+      atualizarLimpar();
+      agendarNomear();
+    }, { bias: () => pinoAlvo && dentroPelotas(pinoAlvo.lat, pinoAlvo.lng) ? [pinoAlvo.lat, pinoAlvo.lng] : biasBusca() });
+    $("buscaPino").addEventListener("input", atualizarLimpar);
+    $("buscaPino").addEventListener("focus", limitarSugestaoPino);
+    if (!$("sugPino")._ejaObs) {
+      $("sugPino")._ejaObs = new MutationObserver(() => { if (document.activeElement === $("buscaPino")) limitarSugestaoPino(); });
+      $("sugPino")._ejaObs.observe($("sugPino"), { childList: true });
+    }
+    $("limparPino").onclick = () => { $("buscaPino").value = ""; $("sugPino").innerHTML = ""; pinoTextoFixo = ""; atualizarLimpar(); };
+  }
+  $("buscaPino").value = pinoTextoFixo;
+  atualizarLimpar();
+  const titulo = $("folhaPino").querySelector("h2");
+  if (titulo) titulo.textContent = "Ajustar no mapa";
+  const dica = $("pinoDica");
+  if (dica) dica.textContent = (pinoLado === "origem" ? "Retirada" : "Entrega") + " · arraste o mapa até o ponto";
+  const escolhido = pinoLado === "origem" ? origem : destino;
+  const c = escolhido && escolhido.lat != null ? escolhido
+    : (aqui && aqui.lat != null && dentroPelotas(aqui.lat, aqui.lng) ? aqui : null);
+  const ll = c ? { lat: c.lat, lng: c.lng } : { lat: PELOTAS[0], lng: PELOTAS[1] };
+  if (c && c.nome && !texto) {
+    pinoAtual = { lat: ll.lat, lng: ll.lng, nome: c.nome, numero: c.numero || "S/N", complemento: c.complemento || "", bairro: c.bairro || "", fora: !!c.fora };
+    $("pinoNome").textContent = (typeof linhaDoPino === "function" ? linhaDoPino(c.nome, c.numero, c.bairro) : "") || c.nome;
+    pinoNomeando = false;
+  } else if (texto) {
+    pinoAtual = { lat: ll.lat, lng: ll.lng, nome: texto, numero: "S/N", fora: false };
+    $("pinoNome").textContent = texto;
+    pinoNomeando = false;
+  } else pinoAtual = null;
+  atualizarBotaoPino();
+  setTimeout(() => {
+    ajustarMapa(mapaPino);
+    folhaIr($("folhaPino"), 1);
+    pintarPontoAzul(mapaPino, "pino");
+    centralizarPino(ll, 17, 0);
+    agendarNomear({ manterTexto: !!(pinoAtual && pinoAtual.nome) });
+  }, 80);
 }
-let pinoAtual = null;
 async function nomearPino() {
-  const c = mapaPino.getCenter(); pinoAtual = { lat: c.lat, lng: c.lng, nome: null };
-  $("pinoNome").textContent = "Buscando endereço…";
-  const n = await nomeDoPonto(c.lat, c.lng); pinoAtual.nome = n || "Ponto no mapa";
-  $("pinoNome").textContent = pinoAtual.nome;
+  if (!mapaPino || $("telaPino").classList.contains("hidden")) return;
+  const c = pontoDoPino();
+  pinoAlvo = { lat: c.lat, lng: c.lng };
+  const seq = ++pinoSeq;
+  if (!dentroPelotas(c.lat, c.lng)) {
+    pinoNomeando = false;
+    pinoAtual = { lat: c.lat, lng: c.lng, nome: null, fora: true };
+    $("pinoNome").textContent = "Fora da área de entrega";
+    atualizarBotaoPino();
+    return;
+  }
+  pinoNomeando = true;
+  atualizarBotaoPino();
+  if (pinoAbort) { try { pinoAbort.abort(); } catch (e) {} }
+  pinoAbort = typeof AbortController === "function" ? new AbortController() : null;
+  const end = await enderecoNoPonto(c.lat, c.lng, { timeout: 4000, signal: pinoAbort && pinoAbort.signal });
+  if (seq !== pinoSeq) return;
+  const agora = pontoDoPino();
+  if (!dentroPelotas(agora.lat, agora.lng)) {
+    pinoNomeando = false;
+    pinoAtual = { lat: agora.lat, lng: agora.lng, nome: null, fora: true };
+    $("pinoNome").textContent = "Fora da área de entrega";
+    atualizarBotaoPino();
+    return;
+  }
+  const base = pinoLado === "origem" ? origem : destino;
+  let numero = end && end.numero ? end.numero : "";
+  if (!numero && base && base.numero && base.numero !== "S/N" && pertoDoPino(base, agora, 30)) numero = base.numero;
+  const nome = (end && end.nome) || pinoTextoFixo || "Ponto no mapa";
+  const bairro = (end && end.bairro) || "";
+  const linha = linhaDoPino((end && (end.rua || end.nome)) || nome, numero, bairro) || nome;
+  pinoNomeando = false;
+  pinoAtual = {
+    lat: agora.lat, lng: agora.lng, nome, numero: numero || "S/N",
+    complemento: "", bairro, fora: false, tipo: (end && end.tipo) || "poi"
+  };
+  $("pinoNome").textContent = linha || nome;
+  atualizarBotaoPino();
 }
-function fecharPino() { telaSobre("telaPino", false); }
+function fecharPino() {
+  clearTimeout(nomearTimer);
+  pinoSeq++;
+  pinoArrastando = false;
+  levantarPino(false);
+  if (pinoAbort) { try { pinoAbort.abort(); } catch (e) {} }
+  telaSobre("telaPino", false);
+}
 function confirmarPino() {
-  if (!pinoAtual || !pinoAtual.nome) return;
-  if (!dentroPelotas(pinoAtual.lat, pinoAtual.lng)) return toast("Por enquanto atendemos só Pelotas.");
-  fecharPino(); escolherDestino(pinoAtual);
+  if (pinoArrastando || pinoNomeando || !pinoAtual || !pinoAtual.nome) return;
+  const c = pontoDoPino();
+  if (!c || !dentroPelotas(c.lat, c.lng)) {
+    pinoAtual = { lat: c ? c.lat : 0, lng: c ? c.lng : 0, nome: null, fora: true };
+    $("pinoNome").textContent = "Fora da área de entrega";
+    atualizarBotaoPino();
+    return;
+  }
+  const ponto = {
+    nome: pinoAtual.nome, lat: c.lat, lng: c.lng,
+    numero: pinoAtual.numero || "S/N", complemento: pinoAtual.complemento || "", bairro: pinoAtual.bairro || "", tipo: pinoAtual.tipo || "poi"
+  };
+  const lado = pinoLado;
+  pinoTextoFixo = "";
+  fecharPino();
+  if (lado === "origem") definirLado("origem", ponto);
+  else escolherDestino(ponto);
 }
 
-// Enquadra pontos no pedaço do mapa que fica visível acima da folha inferior.
-function enquadrar(m, pts, folhaSel) {
-  ajustarMapa(m);
-  const f = document.querySelector(folhaSel); const h = f ? f.getBoundingClientRect().height : 300;
-  m.fitBounds(L.latLngBounds(pts), { paddingTopLeft: [50, 90], paddingBottomRight: [50, h + 40], maxZoom: 16 });
-  setTimeout(() => ajustarMapa(m), 300);
+// Enquadra pontos na faixa do mapa que fica acima da folha. O padding de baixo
+// nunca passa de metade da tela: uma folha alta empurrava o ponto A para fora.
+function alturaFolha(sel) {
+  const f = sel ? document.querySelector(sel) : null;
+  if (!f) return Math.round((window.innerHeight || 700) * 0.34);
+  return parseFloat(f.style.height) || f.getBoundingClientRect().height || Math.round((window.innerHeight || 700) * 0.34);
+}
+function enquadrar(m, pts, folhaSel, duracao) {
+  enquadrarMapa(m, pts, alturaFolha(folhaSel), duracao);
+}
+const pontosAzuis = {};
+function pintarPontoAzul(mapa, chave) {
+  if (!mapa || !aqui || !dentroPelotas(aqui.lat, aqui.lng)) return;
+  if (pontosAzuis[chave]) pontosAzuis[chave].remove();
+  pontosAzuis[chave] = colocarMarcador(mapa, aqui.lat, aqui.lng, htmlPontoUsuario());
+}
+function pintarPontosAzuis() {
+  if (mapaPino && !$("telaPino").classList.contains("hidden")) pintarPontoAzul(mapaPino, "pino");
+  if (mapa && !$("telaConfirmar").classList.contains("hidden")) pintarPontoAzul(mapa, "confirmar");
+  if (mapaPed && !$("pedido").classList.contains("hidden")) pintarPontoAzul(mapaPed, "pedido");
+}
+function irParaMim(qual) {
+  if (!aqui || aqui.lat == null) { atualizarLocal(true); return; }
+  if (qual === "pino" && mapaPino) {
+    pinoTextoFixo = "";
+    levantarPino(false);
+    centralizarPino({ lat: aqui.lat, lng: aqui.lng }, 17, 350);
+    agendarNomear();
+    return;
+  }
+  if (!dentroPelotas(aqui.lat, aqui.lng)) { toast(textoFora()); return; }
+  const m = qual === "pedido" ? mapaPed : mapa;
+  if (!m) return;
+  if (qual === "pedido") { seguirPedido = false; $("pedido").classList.add("mapa-livre"); }
+  else $("telaConfirmar").classList.add("mapa-livre");
+  if (m.easePara) m.easePara({ lat: aqui.lat, lng: aqui.lng, zoom: 16, bearing: 0, pitch: 0, duration: 450 });
+  else m.setView([aqui.lat, aqui.lng], 16, { bearing: 0, pitch: 0 });
+}
+let etaMin = null;
+function desenharConfirmacao() {
+  if (!mapa || !origem || !destino) return;
+  camadas.forEach(c => c.remove());
+  camadas = [
+    colocarMarcador(mapa, origem.lat, origem.lng, htmlRetirada(nomeCheio(origem), etaMin)),
+    colocarMarcador(mapa, destino.lat, destino.lng, htmlEntrega(nomeCheio(destino)))
+  ];
+  pintarPontoAzul(mapa, "confirmar");
+  const reta = [[origem.lat, origem.lng], [destino.lat, destino.lng]];
+  const pts = rota && rota.linha && rota.linha.length > 1 ? rota.linha : reta;
+  if (rota && rota.linha && rota.linha.length > 1) camadas.push(colocarLinha(mapa, rota.linha, ROTA));
+  else camadas.push(colocarLinha(mapa, reta, { color: "#111111", weight: 4, opacity: 0.85, tracejada: true }));
+  enquadrar(mapa, pts, "#deliveryForm");
+}
+function nortear(m) {
+  if (!m || !m.getCenter || !m.setView) return;
+  const c = m.getCenter();
+  m.setView([c.lat, c.lng], m.getZoom(), { bearing: 0, pitch: 0, duration: 0 });
+}
+function verRotaConfirmada() {
+  $("telaConfirmar").classList.remove("mapa-livre");
+  nortear(mapa);
+  desenharConfirmacao();
 }
 
 // ---------- Confirmar com preço ----------
 async function abrirConfirmar() {
   telaSobre("telaConfirmar", true);
-  $("resOrigem").textContent = $("origem").value; $("resDestino").textContent = $("destino").value;
+  $("resOrigem").textContent = textoEndereco(nomeCheio(origem), origem.numero, origem.complemento);
+  $("resDestino").textContent = textoEndereco(nomeCheio(destino), destino.numero, destino.complemento);
   $("tagCategoria").textContent = categoria.nome;
   $("tipo").innerHTML = ""; categoria.itens.filter(i => !/NÃO/.test(i)).forEach(i => $("tipo").add(new Option(i, categoria.nome + ": " + i)));
-  if (!mapa) mapa = criarMapa("mapa");
-  await new Promise(r => setTimeout(r, 120));
-  camadas.forEach(c => c.remove());
-  camadas = [L.marker([origem.lat, origem.lng], { icon: icone.retirada() }).addTo(mapa), L.marker([destino.lat, destino.lng], { icon: icone.entrega() }).addTo(mapa)];
-  enquadrar(mapa, [[origem.lat, origem.lng], [destino.lat, destino.lng]], "#deliveryForm");
+  alojarNumeros(true);
+  if (!mapa) {
+    mapa = criarMapa("mapa", { rotacao: false, limiteCidade: true });
+    mapa.on("dragstart", () => { $("telaConfirmar").classList.add("mapa-livre"); });
+  }
+  folhaIr($("deliveryForm"), 1);
+  await new Promise(r => setTimeout(r, 80));
+  etaMin = null;
+  desenharConfirmacao();
   $("valor").textContent = "—"; $("km").textContent = "Calculando rota…";
   rota = await calcularRota(origem, destino);
-  if (rota) { camadas.push(L.polyline(rota.linha, ROTA).addTo(mapa)); enquadrar(mapa, rota.linha, "#deliveryForm"); }
-  const { data, error } = await db.rpc("cotar_preco", params());
-  if (error) { $("km").textContent = erroMsg(error); return; }
+  if (rota && rota.segundos) etaMin = Math.max(1, Math.round(rota.segundos / 60));
+  desenharConfirmacao();
+  const cotacao = await db.rpc("cotar_preco", params());
+  const data = cotacao && cotacao.data;
+  const error = cotacao && cotacao.error;
+  if (error || !data || !data[0]) {
+    if (rota && isFinite(rota.km)) {
+      const kmRua = Number(rota.km).toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+      $("km").textContent = kmRua + " km pela rua" + (etaMin ? " · ~" + etaMin + " min" : "");
+      $("valor").textContent = "—";
+    } else $("km").textContent = erroMsg(error || { message: "Não foi possível calcular a rota." });
+    desenharConfirmacao();
+    return;
+  }
   $("valor").textContent = money(data[0].preco);
-  $("km").textContent = Number(data[0].distancia_km).toLocaleString("pt-BR") + " km" + (data[0].fonte === "rota" ? " pela rua" : " (estimado)") + " · ~" + Math.max(8, Math.round(data[0].distancia_km * 3 + 6)) + " min";
+  const km = Number(data[0].distancia_km).toLocaleString("pt-BR");
+  const pelaRua = data[0].fonte === "rota" && rota;
+  $("km").textContent = km + " km" + (pelaRua ? " pela rua" : " · distância estimada") + (etaMin ? " · ~" + etaMin + " min" : "");
+  desenharConfirmacao();
 }
-function voltarDoConfirmar() { telaSobre("telaConfirmar", false); abrirPlano(); }
+function voltarDoConfirmar() { alojarNumeros(false); telaSobre("telaConfirmar", false); abrirPlano(); }
 function params() {
   return { p_ret_lat: origem.lat, p_ret_lng: origem.lng, p_ent_lat: destino.lat, p_ent_lng: destino.lng, p_rota_km: rota ? Number(rota.km.toFixed(2)) : null };
 }
 
+["numOrigem", "numDestino", "compOrigem", "compDestino"].forEach(id => {
+  const el = $(id);
+  if (el) el.addEventListener("keydown", ev => { if (ev.key === "Enter") ev.preventDefault(); });
+});
+function rumoEntre(a, b) {
+  const rad = Math.PI / 180;
+  const y = Math.sin((b.lng - a.lng) * rad) * Math.cos(b.lat * rad);
+  const x = Math.cos(a.lat * rad) * Math.sin(b.lat * rad) - Math.sin(a.lat * rad) * Math.cos(b.lat * rad) * Math.cos((b.lng - a.lng) * rad);
+  return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+}
 $("deliveryForm").addEventListener("submit", async ev => {
   ev.preventDefault();
+  const a = lerDetalhe("origem"), b = lerDetalhe("destino");
+  if (!a.ok) { toast("Retirada: " + a.erro); $("numOrigem").focus(); return; }
+  if (!b.ok) { toast("Entrega: " + b.erro); $("numDestino").focus(); return; }
+  origem.numero = a.numero; origem.complemento = a.complemento;
+  destino.numero = b.numero; destino.complemento = b.complemento;
   const botao = $("btnConfirmar"); botao.disabled = true;
   try {
-    const { data, error } = await db.rpc("criar_pedido", { p_retirada: $("origem").value.trim(), p_entrega: $("destino").value.trim(), p_item: $("tipo").value.slice(0, 60), ...params() });
+    const { data, error } = await db.rpc("criar_pedido", {
+      p_retirada: nomeCheio(origem).trim(), p_entrega: nomeCheio(destino).trim(), p_item: $("tipo").value.slice(0, 60),
+      p_ret_numero: origem.numero, p_ret_complemento: origem.complemento, p_ent_numero: destino.numero, p_ent_complemento: destino.complemento,
+      ...params() });
     if (error) throw error;
     const p = data[0];
     telaSobre("telaConfirmar", false); telaSobre("telaPlano", false);
-    mostrarPedido({ id: p.pedido_id, retirada: $("origem").value.trim(), entrega: $("destino").value.trim(), item: $("tipo").value, preco: p.valor,
-      status: "procurando", codigo: p.cod, ret_lat: origem.lat, ret_lng: origem.lng, ent_lat: destino.lat, ent_lng: destino.lng });
+    mostrarPedido({ id: p.pedido_id, retirada: nomeCheio(origem).trim(), entrega: nomeCheio(destino).trim(), item: $("tipo").value, preco: p.valor,
+      status: "procurando", codigo: p.cod, ret_lat: origem.lat, ret_lng: origem.lng, ent_lat: destino.lat, ent_lng: destino.lng,
+      ret_numero: origem.numero, ret_complemento: origem.complemento, ent_numero: destino.numero, ent_complemento: destino.complemento });
   } catch (e) { toast("Não foi possível pedir: " + erroMsg(e), 4000); }
   finally { botao.disabled = false; }
 });
 
 // ---------- Pedido em andamento ----------
+let seguirPedido = true;
+function pontosDoPedido() {
+  const pts = [];
+  if (!pedido) return pts;
+  if (pedido.ret_lat != null && pedido.ret_lng != null) pts.push([+pedido.ret_lat, +pedido.ret_lng]);
+  if (pedido.ent_lat != null && pedido.ent_lng != null) pts.push([+pedido.ent_lat, +pedido.ent_lng]);
+  if (pedido.motoPos) pts.push(pedido.motoPos);
+  return pts;
+}
+function enquadrarPedido() {
+  const pts = pontosDoPedido();
+  if (mapaPed && pts.length) enquadrar(mapaPed, pts, "#folhaPedido");
+}
+function verRotaPedido() { seguirPedido = true; $("pedido").classList.remove("mapa-livre"); nortear(mapaPed); enquadrarPedido(); }
+
 async function mostrarPedido(p) {
-  pedido = p; ultimoS = null;
+  pedido = p; ultimoS = null; seguirPedido = true;
   telaSobre("pedido", true); show("btnCancelar", true); show("btnNovo", false); show("avaliar", false); show("btnWhats", true);
-  $("resumo").textContent = p.retirada + " → " + p.entrega + " · " + p.item + " · " + money(p.preco);
-  if (!mapaPed) mapaPed = criarMapa("mapaPedido"); else setTimeout(() => mapaPed.invalidateSize(), 60);
-  if (p.ret_lat == null) { const { data } = await db.from("pedidos").select("ret_lat,ret_lng,ent_lat,ent_lng").eq("id", p.id).single(); Object.assign(p, data); }
+  $("resumo").textContent = textoEndereco(p.retirada, p.ret_numero, p.ret_complemento) + " → " +
+    textoEndereco(p.entrega, p.ent_numero, p.ent_complemento) + " · " + p.item + " · " + money(p.preco);
+  if (!mapaPed) {
+    mapaPed = criarMapa("mapaPedido", { rotacao: false, limiteCidade: true });
+    mapaPed.on("dragstart", () => { seguirPedido = false; $("pedido").classList.add("mapa-livre"); });
+  } else setTimeout(() => ajustarMapa(mapaPed), 60);
+  if (p.ret_lat == null) {
+    const { data } = await db.from("pedidos").select("ret_lat,ret_lng,ent_lat,ent_lng,ret_numero,ret_complemento,ent_numero,ent_complemento").eq("id", p.id).single();
+    Object.assign(p, data || {});
+    $("resumo").textContent = textoEndereco(p.retirada, p.ret_numero, p.ret_complemento) + " → " +
+      textoEndereco(p.entrega, p.ent_numero, p.ent_complemento) + " · " + p.item + " · " + money(p.preco);
+  }
   camadasPed.forEach(c => c.remove());
-  camadasPed = [L.marker([p.ret_lat, p.ret_lng], { icon: icone.retirada() }).addTo(mapaPed), L.marker([p.ent_lat, p.ent_lng], { icon: icone.entrega() }).addTo(mapaPed)];
-  setTimeout(() => enquadrar(mapaPed, [[p.ret_lat, p.ret_lng], [p.ent_lat, p.ent_lng]], "#pedido .folha"), 150);
+  camadasPed = [];
+  if (p.ret_lat != null && p.ent_lat != null) {
+    camadasPed.push(colocarMarcador(mapaPed, p.ret_lat, p.ret_lng, htmlRetirada(p.retirada)));
+    camadasPed.push(colocarMarcador(mapaPed, p.ent_lat, p.ent_lng, htmlEntrega(p.entrega)));
+    pintarPontoAzul(mapaPed, "pedido");
+    calcularRota({ lat: p.ret_lat, lng: p.ret_lng }, { lat: p.ent_lat, lng: p.ent_lng }).then(r => {
+      if (!mapaPed || pedido !== p) return;
+      const reta = [[+p.ret_lat, +p.ret_lng], [+p.ent_lat, +p.ent_lng]];
+      camadasPed.push(colocarLinha(mapaPed, r && r.linha ? r.linha : reta, r && r.linha ? ROTA : { color: "#111111", weight: 4, opacity: 0.85, tracejada: true }));
+      if (seguirPedido) enquadrarPedido();
+    });
+  }
+  folhaIr($("folhaPedido"), 0);
+  setTimeout(enquadrarPedido, 160);
   atualizarStatus();
   if (canal) db.removeChannel(canal);
   canal = db.channel("pedido-" + p.id)
     .on("postgres_changes", { event: "UPDATE", schema: "public", table: "pedidos", filter: "id=eq." + p.id }, atualizarStatus)
-    .on("postgres_changes", { event: "*", schema: "public", table: "posicoes", filter: "pedido_id=eq." + p.id }, m => m.new && m.new.lat && moverMoto(m.new.lat, m.new.lng))
+    .on("postgres_changes", { event: "*", schema: "public", table: "posicoes", filter: "pedido_id=eq." + p.id }, m => m.new && m.new.lat && moverMoto(m.new.lat, m.new.lng, m.new.heading || m.new.bearing || m.new.rumo))
     .subscribe();
+  sincronizarChatCliente();
 }
-function moverMoto(lat, lng) {
-  if (!mapaPed) return;
-  pedido.motoPos = [lat, lng];
-  if (!motoMarker) motoMarker = L.marker([lat, lng], { icon: icone.moto(), zIndexOffset: 1000 }).addTo(mapaPed);
-  else motoMarker.setLatLng([lat, lng]);
+function moverMoto(lat, lng, heading) {
+  if (!mapaPed || lat == null || lng == null) return;
+  const primeiro = !pedido.motoPos;
+  const anterior = pedido.motoPos;
+  pedido.motoPos = [+lat, +lng];
+  if (!motoMarker) motoMarker = colocarMarcador(mapaPed, pedido.motoPos[0], pedido.motoPos[1], htmlMoto());
+  else motoMarker.setLatLng(pedido.motoPos);
+  let rumo = heading == null || heading !== heading ? null : Number(heading);
+  if (rumo == null && anterior) rumo = rumoEntre({ lat: anterior[0], lng: anterior[1] }, { lat: +lat, lng: +lng });
+  if (rumo != null) orientarMarcador(motoMarker, rumo, mapaPed.getBearing ? mapaPed.getBearing() : 0);
+  let fora = false;
+  try { fora = !mapaPed.getBounds().pad(-0.05).contains(pedido.motoPos); } catch (e) { fora = true; }
+  if (seguirPedido && (primeiro || fora)) enquadrarPedido();
 }
 let ultimoS = null;
 async function atualizarStatus() {
@@ -249,16 +1017,22 @@ async function atualizarStatus() {
   $("estado").textContent = textos[s.status] || s.status;
   show("barraBuscaCli", s.status === "procurando");
   show("codigoBox", ["aceito", "coletado"].includes(s.status)); $("codigoTxt").textContent = pedido.codigo || "";
+  if ($("folhaPedido") && $("folhaPedido").dataset.snap === "colapsada") folhaIr($("folhaPedido"), 0);
   if (s.status === "aceito" && ultimoS && ultimoS !== "aceito") Alerta.tocarAceito();
   ultimoS = s.status;
   if (s.status === "aceito" || s.status === "coletado") {
     const { data: pos } = await db.from("posicoes").select("lat,lng").eq("pedido_id", pedido.id).maybeSingle();
-    if (pos) moverMoto(pos.lat, pos.lng);
+    if (pos) moverMoto(pos.lat, pos.lng, pos.heading || pos.bearing || pos.rumo);
   } else if (motoMarker) { motoMarker.remove(); motoMarker = null; }
   if (s.status === "entregue" || s.status === "cancelado") {
     show("btnCancelar", false); show("btnNovo", true); show("btnWhats", false);
     if (s.status === "entregue") montarAvaliacao();
   }
+  sincronizarChatCliente();
+}
+function sincronizarChatCliente() {
+  if (!pedido || !usuario) { Chat.parar(); return; }
+  Chat.ligar({ pedidoId: pedido.id, meuId: usuario.id, status: pedido.status, outro: "Motoboy" });
 }
 async function cancelarPedido() {
   if (!pedido) return;
@@ -274,15 +1048,17 @@ function sairDoPedido() {
 function novoPedido() {
   if (canal) db.removeChannel(canal);
   pedido = null; canal = null; origem = null; destino = null; rota = null;
+  Chat.parar();
   if (motoMarker) { motoMarker.remove(); motoMarker = null; }
   $("origem").value = ""; $("destino").value = ""; $("origem").dataset.escolhido = ""; $("destino").dataset.escolhido = "";
+  limparDetalhe("origem"); limparDetalhe("destino");
   telaSobre("pedido", false); irAba("home"); carregarHistorico();
 }
 
 // Compartilhar rastreio (WhatsApp): status, motoboy, código e link do mapa com a posição atual.
 function compartilharWhats() {
   if (!pedido) return;
-  let t = `🛵 *É-Já* — entrega a caminho!\nDe: ${pedido.retirada}\nPara: ${pedido.entrega}`;
+  let t = `🛵 *É-Já* — entrega a caminho!\nDe: ${textoEndereco(pedido.retirada, pedido.ret_numero, pedido.ret_complemento)}\nPara: ${textoEndereco(pedido.entrega, pedido.ent_numero, pedido.ent_complemento)}`;
   if (pedido.moto) t += `\nMotoboy: ${pedido.moto}`;
   if (pedido.codigo) t += `\nCódigo para receber: *${pedido.codigo}*`;
   if (pedido.motoPos) t += `\nOnde está agora: https://maps.google.com/?q=${pedido.motoPos[0].toFixed(5)},${pedido.motoPos[1].toFixed(5)}`;
@@ -316,7 +1092,7 @@ async function carregarHistorico() {
       new Date(p.criado_em).toLocaleString("pt-BR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) + " · " + nomes[p.status] + (p.nota ? " · " + "★".repeat(p.nota) : ""),
       async () => {
         if (["procurando", "aceito", "coletado"].includes(p.status)) { const { data } = await db.rpc("meu_pedido_ativo"); if (data && data[0]) mostrarPedido(data[0]); }
-        else toast(p.retirada + " → " + p.entrega + " · " + money(p.preco), 4000);
+        else toast(textoEndereco(p.retirada, p.ret_numero, p.ret_complemento) + " → " + textoEndereco(p.entrega, p.ent_numero, p.ent_complemento) + " · " + money(p.preco), 4000);
       });
     b.querySelector("em").textContent = money(p.preco);
     el.append(b);
@@ -324,3 +1100,21 @@ async function carregarHistorico() {
 }
 
 setInterval(atualizarStatus, 10000);
+
+ligarFolha($("folhaPino"), { inicial: 1 });
+ligarFolha($("deliveryForm"), { inicial: 1 });
+ligarFolha($("folhaPedido"), { inicial: 0 });
+window.addEventListener("eja-folha", ev => {
+  const f = ev.detail && ev.detail.folha;
+  if (!f) return;
+  const duracao = ev.detail.arrastando ? 0 : undefined;
+  if (f.id === "folhaPedido" && pedido && mapaPed && seguirPedido) enquadrar(mapaPed, pontosDoPedido(), "#folhaPedido", duracao);
+  if (f.id === "folhaPino" && mapaPino && !$("telaPino").classList.contains("hidden")) {
+    posicionarPinoVisual();
+    if (pinoAlvo) centralizarPino(pinoAlvo, mapaPino.getZoom(), 0);
+  }
+  if (f.id === "deliveryForm" && mapa && origem && destino) {
+    const pts = rota && rota.linha ? rota.linha : [[origem.lat, origem.lng], [destino.lat, destino.lng]];
+    enquadrar(mapa, pts, "#deliveryForm", duracao);
+  }
+});

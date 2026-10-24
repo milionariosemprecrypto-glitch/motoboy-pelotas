@@ -2,6 +2,8 @@
 let usuario = null, aprovado = false;
 let disponivel = false, ocupado = false, ofertaAtual = null, corrida = null;
 let timerOferta = null, timerMoto = null, motoAbaAtual = "inicio", mapa = null, marcador = null, ultimaPos = null;
+let seguirMoto = true, vozLigada = false, ultimoPan = 0, navBuscando = false;
+try { vozLigada = localStorage.getItem("eja_nav_voz") === "1"; } catch (e) {}
 const recusados = new Set();
 
 iniciarAuth({ role: "motoboy", aoEntrar: u => { usuario = u; carregar(); } });
@@ -73,23 +75,40 @@ function motoAba(a) {
   show("motoInicio", a === "inicio"); show("motoGanhos", a === "ganhos");
   $("segInicio").classList.toggle("active", a === "inicio");
   $("segGanhos").classList.toggle("active", a === "ganhos");
-  if (a === "ganhos") carregarGanhos(); else setTimeout(() => mapa && mapa.invalidateSize(), 60);
+  const folha = document.querySelector("#telaTrabalho .painel");
+  if (a === "ganhos") { carregarGanhos(); folhaIr(folha, 2); }
+  else { folhaIr(folha, 0); setTimeout(() => mapa && ajustarMapa(mapa), 80); }
   atualizarBarra();
 }
 
 function iniciarMapa() {
   if (mapa) return;
   document.body.classList.add("modo-mapa");
-  mapa = criarMapa("mapa");
-  if (!navigator.geolocation) return;
+  mapa = criarMapa("mapa", { pitch: 55, zoom: 15 });
+  ligarFolha(document.querySelector("#telaTrabalho .painel"), {
+    inicial: 0,
+    colapsada: () => document.body.classList.contains("em-corrida") ? 0 : 148
+  });
+  if ($("navVoz")) $("navVoz").textContent = vozLigada ? "Voz on" : "Voz off";
+  mapa.on("dragstart", () => { seguirMoto = false; document.body.classList.add("mapa-livre"); });
+  mapa.on("move", () => { if (marcador) orientarMarcador(marcador, Nav.ultimoRumo, mapa.getBearing()); });
+  window.addEventListener("eja-folha", ev => {
+    if (seguirMoto && ultimaPos) aplicarCamera(ultimaPos[0], ultimaPos[1], Nav.ultimoRumo, 0, ev.detail && ev.detail.arrastando ? 0 : 400);
+  });
+  if (!navigator.geolocation) { if ($("motoStatus")) $("motoStatus").textContent = "GPS indisponível neste aparelho."; return; }
   navigator.geolocation.watchPosition(p => {
-    const ll = [p.coords.latitude, p.coords.longitude];
-    ultimaPos = ll;
-    if (!marcador) {
-      marcador = L.marker(ll, { icon: icone.moto(), zIndexOffset: 1000 }).addTo(mapa);
-      mapa.setView(ll, 15);
-    } else marcador.setLatLng(ll);
-  }, () => {}, { enableHighAccuracy: true });
+    aoPosicao(p.coords.latitude, p.coords.longitude, p.coords.heading, p.coords.speed);
+  }, avisoGps, { enableHighAccuracy: true, timeout: 15000, maximumAge: 5000 });
+}
+function avisoGps(err) {
+  const code = err && err.code;
+  const msg = String((err && (err.message || err.code)) || "");
+  const negado = code === 1 || /denied|permission/i.test(msg);
+  const tempo = code === 3 || /timeout/i.test(msg);
+  const texto = negado ? "Permissão de localização negada. Ative o GPS para o É-Já."
+    : tempo ? "Tempo esgotado ao buscar o GPS."
+    : "Não foi possível ler o GPS.";
+  if ($("motoStatus")) $("motoStatus").textContent = texto;
 }
 
 // Envia a localização: a cada 10 s em corrida (rastreio ao vivo do cliente), 30 s quando só online.
@@ -112,11 +131,50 @@ async function localizacaoSegundoPlano(ligar) {
     watcherBg = await BG.addWatcher({
       backgroundTitle: "É-Já Motoboy", backgroundMessage: "Compartilhando sua localização durante o trabalho",
       requestPermissions: true, stale: false, distanceFilter: 15
-    }, (loc, err) => { if (loc) { ultimaPos = [loc.latitude, loc.longitude]; marcador && marcador.setLatLng(ultimaPos); } });
+    }, (loc, err) => { if (err) avisoGps(err); if (loc) aoPosicao(loc.latitude, loc.longitude, loc.bearing, loc.speed); });
   } else if (!ligar && watcherBg) { await BG.removeWatcher({ id: watcherBg }); watcherBg = null; }
 }
 
-function centralizar() { if (ultimaPos) mapa.setView(ultimaPos, 16); else mapa.setView(PELOTAS, 14); }
+let rumoParaCima = true;
+function zoomPorVelocidade(speed) {
+  if (!ocupado) return 16.4;
+  const v = speed == null ? 0 : speed;
+  if (v < 1.5) return 17;
+  if (v < 6) return 16.4;
+  if (v < 12) return 15.8;
+  return 15.2;
+}
+function paddingCamera() {
+  const folha = document.querySelector("#telaTrabalho .painel");
+  const H = window.innerHeight || 700;
+  const h = folha ? (parseFloat(folha.style.height) || folha.getBoundingClientRect().height || 148) : 148;
+  let bottom = Math.max(0, h) + 28;
+  const top = document.body.classList.contains("em-corrida") ? 108 : 72;
+  if (top + bottom > H - 96) bottom = Math.max(48, H - 96 - top);
+  return { top, bottom, left: 28, right: 72 };
+}
+function aplicarCamera(lat, lng, bearing, speed, duracao) {
+  if (!mapa || !seguirMoto || !mapa.easePara) return;
+  const b = rumoParaCima ? (bearing || 0) : 0;
+  mapa.easePara({ lat, lng, bearing: b, pitch: 55, zoom: zoomPorVelocidade(speed), padding: paddingCamera(), duration: duracao == null ? 750 : duracao });
+  orientarMarcador(marcador, bearing || 0, b);
+}
+function alternarBussola() {
+  rumoParaCima = !rumoParaCima;
+  const btn = $("bussola");
+  if (btn) { btn.classList.toggle("norte", !rumoParaCima); btn.querySelector("b").textContent = rumoParaCima ? "↑" : "N"; }
+  if (seguirMoto && ultimaPos) aplicarCamera(ultimaPos[0], ultimaPos[1], Nav.ultimoRumo, 0);
+  else if (mapa && mapa.easePara && mapa.getCenter) {
+    const c = mapa.getCenter();
+    mapa.easePara({ lat: c.lat, lng: c.lng, bearing: rumoParaCima ? (Nav.ultimoRumo || 0) : 0, pitch: 55, zoom: mapa.getZoom(), duration: 450 });
+  }
+}
+function centralizar() {
+  seguirMoto = true;
+  document.body.classList.remove("mapa-livre");
+  if (ultimaPos) aplicarCamera(ultimaPos[0], ultimaPos[1], Nav.ultimoRumo, 0);
+  else if (mapa) mapa.setView(PELOTAS, 14);
+}
 
 function atualizarPainel() {
   $("motoStatusTitulo").textContent = ocupado ? "Em corrida" : disponivel ? "Procurando corridas" : "Você está offline";
@@ -141,8 +199,9 @@ function alternarDisponibilidade() {
 function mostrarOferta(o) {
   ofertaAtual = o;
   $("ofertaPreco").textContent = money(o.preco);
-  $("ofertaResumo").textContent = "Retirada: " + o.retirada + " | Entrega: " + o.entrega + " | Item: " + o.item +
-    " | " + Number(o.distancia_km).toLocaleString("pt-BR") + " km";
+  $("ofertaResumo").textContent = "Retirada: " + textoEndereco(o.retirada, o.ret_numero, o.ret_complemento) +
+    " | Entrega: " + textoEndereco(o.entrega, o.ent_numero, o.ent_complemento) +
+    " | Item: " + o.item + " | " + Number(o.distancia_km).toLocaleString("pt-BR") + " km";
   const b = $("barraTempo");
   b.style.transition = "none"; b.style.width = "100%"; void b.offsetWidth;
   b.style.transition = "width 30s linear"; b.style.width = "0%";
@@ -179,39 +238,156 @@ function recusarCorrida() {
   buscarOfertas();
 }
 
-let camadasCorrida = [];
-async function desenharCorrida(c) {
-  camadasCorrida.forEach(x => x.remove()); camadasCorrida = [];
-  if (!c || c.ret_lat == null) return;
-  const alvo = c.status === "aceito" ? { lat: c.ret_lat, lng: c.ret_lng } : { lat: c.ent_lat, lng: c.ent_lng };
-  camadasCorrida.push(L.marker([alvo.lat, alvo.lng], { icon: c.status === "aceito" ? icone.retirada() : icone.entrega() }).addTo(mapa));
-  if (ultimaPos) {
-    const r = await calcularRota({ lat: ultimaPos[0], lng: ultimaPos[1] }, alvo);
-    if (r) { camadasCorrida.push(L.polyline(r.linha, ROTA).addTo(mapa)); mapa.fitBounds(r.linha, { padding: [30, 30] }); }
+let linhaNav = null, marcaAlvo = null, alvoDesenhado = null;
+function alvoCorrida() {
+  const c = corrida;
+  if (!c || c.ret_lat == null) return null;
+  return c.status === "aceito"
+    ? { lat: c.ret_lat, lng: c.ret_lng, key: c.id + ":ret" }
+    : { lat: c.ent_lat, lng: c.ent_lng, key: c.id + ":ent" };
+}
+function limparDesenhoNav() {
+  if (linhaNav) { linhaNav.remove(); linhaNav = null; }
+  if (marcaAlvo) { marcaAlvo.remove(); marcaAlvo = null; }
+  alvoDesenhado = null;
+}
+function desenharAlvo() {
+  const alvo = alvoCorrida();
+  if (!alvo || !mapa) return;
+  if (alvoDesenhado === alvo.key && marcaAlvo) return;
+  if (marcaAlvo) marcaAlvo.remove();
+  marcaAlvo = colocarMarcador(mapa, alvo.lat, alvo.lng, htmlAlvo(corrida.status === "aceito"));
+  alvoDesenhado = alvo.key;
+}
+function desenharLinhaNav() {
+  if (!mapa) return;
+  if (linhaNav) { linhaNav.remove(); linhaNav = null; }
+  if (Nav.rota) linhaNav = colocarLinha(mapa, Nav.rota.linha, ROTA);
+}
+function preencherLugar(c) {
+  const coleta = c.status === "aceito";
+  $("lugarRotulo").textContent = coleta ? "Buscar em" : "Entregar em";
+  $("lugarRua").textContent = coleta ? c.retirada : c.entrega;
+  const num = coleta ? c.ret_numero : c.ent_numero;
+  const comp = coleta ? c.ret_complemento : c.ent_complemento;
+  const el = $("lugarNum");
+  if (num) { el.textContent = num === "S/N" ? "S/N" : "nº " + num; el.classList.remove("vazio"); }
+  else { el.textContent = "Sem número neste pedido"; el.classList.add("vazio"); }
+  $("lugarComp").textContent = comp || "";
+  show("lugarComp", !!comp);
+}
+function esconderNav() {
+  show("navBanner", false); show("navEta", false);
+  NavLimpar(); limparDesenhoNav();
+}
+function renderNav(lat, lng) {
+  show("navBanner", true); show("navEta", true);
+  const alvo = alvoCorrida();
+  const p = (Nav.rota && alvo && Nav.rota.alvoKey === alvo.key) ? painelNav(lat, lng) : null;
+  if (!p) {
+    $("navSeta").textContent = "…";
+    $("navInstrucao").textContent = Nav.falhou ? "Sem rota agora. Use Google Maps ou Waze." : "Traçando a rota…";
+    $("navRua").textContent = "";
+    $("navDist").textContent = "—";
+    $("navTempo").textContent = "";
+    return;
   }
+  $("navSeta").textContent = p.seta;
+  $("navInstrucao").textContent = textoManobra(p.instrucao, p.metrosManobra, p.tipo);
+  $("navRua").textContent = p.fora ? "Você saiu da rota. Recalculando…" : (p.nome || "");
+  $("navDist").textContent = formatarDistancia(p.restanteM);
+  $("navTempo").textContent = formatarDuracao(p.restanteS);
+  if (p.voz && p.voz !== Nav.ultimaVoz) { Nav.ultimaVoz = p.voz; falarNav(p.voz); }
+}
+function falarNav(texto) {
+  if (!vozLigada || !texto || !window.speechSynthesis) return;
+  try {
+    const u = new SpeechSynthesisUtterance(texto);
+    u.lang = "pt-BR";
+    speechSynthesis.cancel();
+    speechSynthesis.speak(u);
+  } catch (e) {}
+}
+function alternarVoz() {
+  vozLigada = !vozLigada;
+  try { localStorage.setItem("eja_nav_voz", vozLigada ? "1" : "0"); } catch (e) {}
+  $("navVoz").textContent = vozLigada ? "Voz on" : "Voz off";
+  if (!vozLigada && window.speechSynthesis) { speechSynthesis.cancel(); Nav.ultimaVoz = ""; return; }
+  falarNav("Voz ligada");
+  Nav.ultimaVoz = "";
+}
+function escolherRumo(anterior, atual, heading, speed) {
+  if (typeof heading === "number" && !Number.isNaN(heading) && heading >= 0 && (speed == null || speed > 0.4)) return heading;
+  if (anterior && metrosEntre(anterior, atual) > 8) return rumoGraus(anterior, atual);
+  return Nav.ultimoRumo;
+}
+async function aoPosicao(lat, lng, heading, speed) {
+  const anterior = ultimaPos ? { lat: ultimaPos[0], lng: ultimaPos[1] } : null;
+  const ll = [lat, lng];
+  ultimaPos = ll;
+  if (mapa) {
+    if (!marcador) marcador = colocarMarcador(mapa, lat, lng, htmlMoto());
+    else marcador.setLatLng(ll);
+  }
+  const rumo = escolherRumo(anterior, { lat, lng }, heading, speed);
+  if (rumo != null) Nav.ultimoRumo = rumo;
+  const seguirCamera = () => {
+    if (seguirMoto && mapa && Date.now() - ultimoPan > 600) {
+      ultimoPan = Date.now();
+      aplicarCamera(lat, lng, Nav.ultimoRumo, speed);
+    } else orientarMarcador(marcador, Nav.ultimoRumo, mapa && mapa.getBearing ? mapa.getBearing() : 0);
+  };
+  if (!ocupado || !corrida) { seguirCamera(); return; }
+  const alvo = alvoCorrida();
+  if (!alvo) return;
+  desenharAlvo();
+  const precisa = precisaRotaNav(lat, lng, alvo.key);
+  if (precisa.buscar && !navBuscando) {
+    navBuscando = true;
+    const res = await buscarRotaNav({ lat, lng }, alvo, { forcar: precisa.forcar });
+    navBuscando = false;
+    if (res && res.rota) { definirRotaNav(res.rota, alvo.key); desenharLinhaNav(); }
+    else if (res && !res.throttled && !Nav.rota) Nav.falhou = true;
+  }
+  renderNav(lat, lng);
+  seguirCamera();
 }
 
-function abrirNavegacao() {
-  const c = corrida; if (!c) return;
-  const [lat, lng] = c.status === "aceito" ? [c.ret_lat, c.ret_lng] : [c.ent_lat, c.ent_lng];
-  window.open("https://www.google.com/maps/dir/?api=1&travelmode=driving&destination=" + lat + "," + lng, "_blank");
+function abrirNavegacao(app) {
+  const alvo = alvoCorrida(); if (!alvo) return;
+  const url = urlMapaExterno(app === "waze" ? "waze" : "google", alvo.lat, alvo.lng);
+  if (url) window.open(url, "_blank");
 }
 
 function mostrarCorrida() {
   const c = corrida, coletando = c.status === "aceito";
-  desenharCorrida(c); localizacaoSegundoPlano(true); enviarLocal(true);
+  seguirMoto = true;
+  document.body.classList.add("em-corrida");
+  if (mapa && ultimaPos) aplicarCamera(ultimaPos[0], ultimaPos[1], Nav.ultimoRumo, 1);
+  desenharAlvo();
+  if (ultimaPos) aoPosicao(ultimaPos[0], ultimaPos[1], Nav.ultimoRumo, 1);
+  else renderNav(PELOTAS[0], PELOTAS[1]);
+  localizacaoSegundoPlano(true); enviarLocal(true);
   show("corrida", true);
   $("corridaTitulo").textContent = coletando ? "Vá retirar o item" : "Leve até o destino";
-  $("corridaInfo").textContent = (coletando ? "Retirada: " + c.retirada : "Entrega: " + c.entrega) +
-    " | Item: " + c.item + " | Valor: " + money(c.preco);
+  preencherLugar(c);
+  $("corridaInfo").textContent = "Item: " + c.item + " | Valor: " + money(c.preco);
   show("codigoLabel", !coletando); show("codigoEntrega", !coletando);
   $("corridaBtn").textContent = coletando ? "Já coletei o item" : "Concluir entrega";
   $("motoStatus").textContent = coletando ? "Corrida aceita. Siga até o local de retirada." : "Item coletado. Siga até o destino.";
+  folhaIr(document.querySelector("#telaTrabalho .painel"), 0);
   atualizarBarra();
+  sincronizarChatMoto();
+}
+
+function sincronizarChatMoto() {
+  if (!corrida || !usuario) { Chat.parar(); return; }
+  Chat.ligar({ pedidoId: corrida.id, meuId: usuario.id, status: corrida.status, outro: "Cliente" });
 }
 
 function encerrarCorrida(msg) {
-  corrida = null; ocupado = false; desenharCorrida(null);
+  corrida = null; ocupado = false; esconderNav();
+  Chat.parar();
   if (!disponivel) localizacaoSegundoPlano(false);
   show("corrida", false);
   $("codigoEntrega").value = "";

@@ -19,6 +19,12 @@ exception when others then insert into r values ('sem número é recusado', sqle
 do $$ begin perform criar_pedido('Rua A','Rua B','Documento',-31.7719,-52.3426,-31.7600,-52.3300, null, '!!', null, '1', null);
   insert into r values ('número inválido é recusado', false, 'aceitou');
 exception when others then insert into r values ('número inválido é recusado', sqlerrm ilike '%inválido%', sqlerrm); end $$;
+do $$ begin perform criar_pedido('Rua A','Rua B','Documento',-31.7719,-52.3426,-31.7600,-52.3300, null, '10', null, '20', null);
+  insert into r values ('sem pagamento é recusado', false, 'aceitou');
+exception when others then insert into r values ('sem pagamento é recusado', sqlerrm ilike '%pagar%', sqlerrm); end $$;
+do $$ begin perform criar_pedido('Rua A','Rua B','Documento',-31.7719,-52.3426,-31.7600,-52.3300, null, '10', null, '20', null, 'boleto');
+  insert into r values ('pagamento inválido é recusado', false, 'aceitou');
+exception when others then insert into r values ('pagamento inválido é recusado', sqlerrm ilike '%pagar%', sqlerrm); end $$;
 
 -- criar_pedido devolve pedido_id/valor/km/cod; o número fica na linha de pedidos.
 do $$
@@ -26,10 +32,11 @@ declare v_id uuid;
 begin
   select c.pedido_id into v_id from criar_pedido(
     'Rua A','Rua B','Documento',-31.7719,-52.3426,-31.7600,-52.3300,
-    null, 's/n', 'portão azul', '120A', '   ') c;
+    null, 's/n', 'portão azul', '120A', '   ', 'PIX') c;
   insert into r select 'grava S/N, complemento e número',
-    ret_numero = 'S/N' and ret_complemento = 'portão azul' and ent_numero = '120A' and ent_complemento is null,
-    coalesce(ret_numero,'') || '/' || coalesce(ent_numero,'')
+    ret_numero = 'S/N' and ret_complemento = 'portão azul' and ent_numero = '120A' and ent_complemento is null
+      and forma_pagamento = 'pix',
+    coalesce(ret_numero,'') || '/' || coalesce(ent_numero,'') || '/' || coalesce(forma_pagamento,'')
   from pedidos where id = v_id;
 end $$;
 
@@ -42,7 +49,7 @@ do $$ begin
 exception when others then insert into r values ('chat fechado antes do aceite', true, sqlerrm); end $$;
 
 select set_config('request.jwt.claims','{"sub":"00000000-0000-0000-0000-0000000000e3","role":"authenticated"}', true);
-insert into r select 'motoboy vê o número na oferta', ret_numero = 'S/N' and ent_numero = '120A', coalesce(ret_numero,'') from pedidos_abertos() where id = (select id from pid);
+insert into r select 'motoboy vê o número na oferta', ret_numero = 'S/N' and ent_numero = '120A' and forma_pagamento = 'pix', coalesce(forma_pagamento,'') from pedidos_abertos() where id = (select id from pid);
 insert into r select 'motoboy aceita', aceitar_pedido((select id from pid)), '';
 insert into mensagens (pedido_id, autor_id, texto) select id, auth.uid(), 'Estou na porta' from pid;
 insert into r select 'motoboy envia mensagem', count(*) = 1, count(*)::text from mensagens;
@@ -86,7 +93,7 @@ do $$ begin
   insert into r values ('21ª mensagem bloqueada', false, 'passou');
 exception when others then insert into r values ('21ª mensagem bloqueada', sqlerrm ilike '%Muitas mensagens%', sqlerrm); end $$;
 
-insert into r select 'minha corrida traz o número', ret_numero = 'S/N' and ent_complemento is null and ent_numero = '120A', coalesce(ent_numero,'') from minha_corrida();
+insert into r select 'minha corrida traz o número', ret_numero = 'S/N' and ent_complemento is null and ent_numero = '120A' and forma_pagamento = 'pix', coalesce(forma_pagamento,'') from minha_corrida();
 insert into r select 'coleta', avancar_pedido((select id from pid)) = 'coletado', '';
 
 reset role;

@@ -124,6 +124,7 @@
           <div id="motoStatus" class="painel-sub">Fique online para receber corridas.</div>
           <div id="corrida" class="hidden">
             <h2 id="corridaTitulo"></h2>
+            <div id="corridaPag" class="pag-destaque hidden"></div>
             <label for="codigoEntrega" id="codigoLabel" class="hidden">Código de confirmação do destinatário</label>
             <input id="codigoEntrega" class="hidden" inputmode="numeric" maxlength="4" placeholder="4 dígitos">
             <button id="corridaBtn" class="primary" type="button" onclick="avancar()"></button>
@@ -166,6 +167,7 @@
 <div id="oferta" class="sheet sheet-oferta hidden">
   <div class="oferta-topo"><span class="pill">Nova corrida</span><span class="pulso"></span></div>
   <div><h2 id="ofertaPreco"></h2></div>
+  <div id="ofertaPag" class="pag-destaque">Pagamento: —</div>
   <div id="ofertaResumo" class="small"></div>
   <div class="tempo"><div id="barraTempo"></div></div>
   <button class="primary" onclick="aceitarCorrida()">Aceitar corrida</button>

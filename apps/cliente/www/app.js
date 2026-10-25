@@ -871,6 +871,9 @@ async function abrirConfirmar() {
   }
   folhaIr($("deliveryForm"), 1);
   await new Promise(r => setTimeout(r, 80));
+  formaPagamento = "";
+  document.querySelectorAll("#formasPag button").forEach(b => b.setAttribute("aria-pressed", "false"));
+  if ($("btnConfirmar")) $("btnConfirmar").disabled = true;
   etaMin = null;
   desenharConfirmacao();
   $("valor").textContent = "—"; $("km").textContent = "Calculando rota…";
@@ -887,6 +890,8 @@ async function abrirConfirmar() {
       $("valor").textContent = "—";
     } else $("km").textContent = erroMsg(error || { message: "Não foi possível calcular a rota." });
     desenharConfirmacao();
+    const mioloErro = document.querySelector("#deliveryForm .folha-miolo");
+    if (mioloErro) mioloErro.scrollTop = mioloErro.scrollHeight;
     return;
   }
   $("valor").textContent = money(data[0].preco);
@@ -894,10 +899,23 @@ async function abrirConfirmar() {
   const pelaRua = data[0].fonte === "rota" && rota;
   $("km").textContent = km + " km" + (pelaRua ? " pela rua" : " · distância estimada") + (etaMin ? " · ~" + etaMin + " min" : "");
   desenharConfirmacao();
+  const miolo = document.querySelector("#deliveryForm .folha-miolo");
+  if (miolo) miolo.scrollTop = miolo.scrollHeight;
 }
 function voltarDoConfirmar() { alojarNumeros(false); telaSobre("telaConfirmar", false); abrirPlano(); }
 function params() {
   return { p_ret_lat: origem.lat, p_ret_lng: origem.lng, p_ent_lat: destino.lat, p_ent_lng: destino.lng, p_rota_km: rota ? Number(rota.km.toFixed(2)) : null };
+}
+let formaPagamento = "";
+function textoPagamento(forma) {
+  const nomes = { pix: "PIX", dinheiro: "Dinheiro", cartao: "Cartão" };
+  return nomes[forma] ? "Pagamento: " + nomes[forma] : "";
+}
+function escolherForma(forma) {
+  if (!{ pix: 1, dinheiro: 1, cartao: 1 }[forma]) return;
+  formaPagamento = forma;
+  document.querySelectorAll("#formasPag button").forEach(b => b.setAttribute("aria-pressed", b.dataset.forma === forma ? "true" : "false"));
+  if ($("btnConfirmar")) $("btnConfirmar").disabled = false;
 }
 
 ["numOrigem", "numDestino", "compOrigem", "compDestino"].forEach(id => {
@@ -915,6 +933,7 @@ $("deliveryForm").addEventListener("submit", async ev => {
   const a = lerDetalhe("origem"), b = lerDetalhe("destino");
   if (!a.ok) { toast("Retirada: " + a.erro); $("numOrigem").focus(); return; }
   if (!b.ok) { toast("Entrega: " + b.erro); $("numDestino").focus(); return; }
+  if (!formaPagamento) { toast("Escolha como vai pagar o motoboy."); return; }
   origem.numero = a.numero; origem.complemento = a.complemento;
   destino.numero = b.numero; destino.complemento = b.complemento;
   const botao = $("btnConfirmar"); botao.disabled = true;
@@ -922,13 +941,15 @@ $("deliveryForm").addEventListener("submit", async ev => {
     const { data, error } = await db.rpc("criar_pedido", {
       p_retirada: nomeCheio(origem).trim(), p_entrega: nomeCheio(destino).trim(), p_item: $("tipo").value.slice(0, 60),
       p_ret_numero: origem.numero, p_ret_complemento: origem.complemento, p_ent_numero: destino.numero, p_ent_complemento: destino.complemento,
+      p_forma_pagamento: formaPagamento,
       ...params() });
     if (error) throw error;
     const p = data[0];
     telaSobre("telaConfirmar", false); telaSobre("telaPlano", false);
     mostrarPedido({ id: p.pedido_id, retirada: nomeCheio(origem).trim(), entrega: nomeCheio(destino).trim(), item: $("tipo").value, preco: p.valor,
       status: "procurando", codigo: p.cod, ret_lat: origem.lat, ret_lng: origem.lng, ent_lat: destino.lat, ent_lng: destino.lng,
-      ret_numero: origem.numero, ret_complemento: origem.complemento, ent_numero: destino.numero, ent_complemento: destino.complemento });
+      ret_numero: origem.numero, ret_complemento: origem.complemento, ent_numero: destino.numero, ent_complemento: destino.complemento,
+      forma_pagamento: formaPagamento });
   } catch (e) { toast("Não foi possível pedir: " + erroMsg(e), 4000); }
   finally { botao.disabled = false; }
 });
@@ -952,6 +973,8 @@ function verRotaPedido() { seguirPedido = true; $("pedido").classList.remove("ma
 async function mostrarPedido(p) {
   pedido = p; ultimoS = null; seguirPedido = true;
   telaSobre("pedido", true); show("btnCancelar", true); show("btnNovo", false); show("avaliar", false); show("btnWhats", true);
+  const linhaPag = textoPagamento(p.forma_pagamento);
+  if ($("pedidoPag")) { $("pedidoPag").textContent = linhaPag; show("pedidoPag", !!linhaPag); }
   $("resumo").textContent = textoEndereco(p.retirada, p.ret_numero, p.ret_complemento) + " → " +
     textoEndereco(p.entrega, p.ent_numero, p.ent_complemento) + " · " + p.item + " · " + money(p.preco);
   if (!mapaPed) {
@@ -959,8 +982,10 @@ async function mostrarPedido(p) {
     mapaPed.on("dragstart", () => { seguirPedido = false; $("pedido").classList.add("mapa-livre"); });
   } else setTimeout(() => ajustarMapa(mapaPed), 60);
   if (p.ret_lat == null) {
-    const { data } = await db.from("pedidos").select("ret_lat,ret_lng,ent_lat,ent_lng,ret_numero,ret_complemento,ent_numero,ent_complemento").eq("id", p.id).single();
+    const { data } = await db.from("pedidos").select("ret_lat,ret_lng,ent_lat,ent_lng,ret_numero,ret_complemento,ent_numero,ent_complemento,forma_pagamento").eq("id", p.id).single();
     Object.assign(p, data || {});
+    const pagDepois = textoPagamento(p.forma_pagamento);
+    if ($("pedidoPag")) { $("pedidoPag").textContent = pagDepois; show("pedidoPag", !!pagDepois); }
     $("resumo").textContent = textoEndereco(p.retirada, p.ret_numero, p.ret_complemento) + " → " +
       textoEndereco(p.entrega, p.ent_numero, p.ent_complemento) + " · " + p.item + " · " + money(p.preco);
   }

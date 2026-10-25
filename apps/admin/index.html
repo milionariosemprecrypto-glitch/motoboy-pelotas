@@ -182,7 +182,8 @@ async function carregarPedidos() {
     const tr = document.createElement("tr");
     tr.append(td(dt(p.criado_em)), td(p.cliente), td(p.motoboy || "—"),
       td(textoEndereco(p.retirada, p.ret_numero, p.ret_complemento) + " → " + textoEndereco(p.entrega, p.ent_numero, p.ent_complemento)),
-      td(Number(p.distancia_km).toLocaleString("pt-BR")), td(money(p.preco)), td(p.status));
+      td(Number(p.distancia_km).toLocaleString("pt-BR")), td(money(p.preco)),
+      td(p.status + (p.forma_pagamento ? " · " + ({ pix: "PIX", dinheiro: "Dinheiro", cartao: "Cartão" }[p.forma_pagamento] || p.forma_pagamento) : "")));
     tb.append(tr);
   });
   if (!data.length) tb.innerHTML = '<tr><td colspan="7" class="small">Nenhum pedido.</td></tr>';

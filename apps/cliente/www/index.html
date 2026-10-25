@@ -214,8 +214,14 @@
           <div class="op-txt"><b>É-Já Moto · <span id="tagCategoria">Entrega rápida</span></b><span id="km">Calculando…</span></div>
           <strong id="valor">—</strong>
         </div>
-        <p class="small">Preço calculado antes de confirmar. Pagamento direto ao motoboy.</p>
-        <button id="btnConfirmar" class="btn-preto" type="submit">Confirmar entrega</button>
+        <p class="small">Preço calculado antes de confirmar. Você paga o motoboy na hora — o app não cobra.</p>
+        <p class="pag-rotulo" id="pagRotulo">Como vai pagar o motoboy?</p>
+        <div id="formasPag" class="formas-pag" role="radiogroup" aria-labelledby="pagRotulo">
+          <button type="button" data-forma="pix" aria-pressed="false" onclick="escolherForma('pix')"><b>PIX</b><span>na hora</span></button>
+          <button type="button" data-forma="dinheiro" aria-pressed="false" onclick="escolherForma('dinheiro')"><b>Dinheiro</b><span>em espécie</span></button>
+          <button type="button" data-forma="cartao" aria-pressed="false" onclick="escolherForma('cartao')"><b>Cartão</b><span>maquininha</span></button>
+        </div>
+        <button id="btnConfirmar" class="btn-preto" type="submit" disabled>Confirmar entrega</button>
       </div>
     </form>
   </section>
@@ -232,6 +238,7 @@
         <div id="estado" class="estado-titulo">Procurando um motoboy disponível…</div>
         <div id="barraBuscaCli" class="barra-busca"><i></i></div>
         <div id="codigoBox" class="codigo-box hidden">Código para o destinatário <b id="codigoTxt"></b></div>
+        <div id="pedidoPag" class="pag-destaque hidden"></div>
         <div id="resumo" class="small"></div>
         <div class="folha-extra">
           <button id="btnChat" class="btn-claro hidden" type="button" onclick="Chat.alternar()">Conversar <span id="chatBadge" class="chat-badge hidden">0</span></button>

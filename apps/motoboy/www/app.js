@@ -196,9 +196,14 @@ function alternarDisponibilidade() {
   else esconderOferta();
 }
 
+function textoPagamento(forma) {
+  const nomes = { pix: "PIX", dinheiro: "Dinheiro", cartao: "Cartão" };
+  return "Pagamento: " + (nomes[forma] || "a combinar");
+}
 function mostrarOferta(o) {
   ofertaAtual = o;
   $("ofertaPreco").textContent = money(o.preco);
+  if ($("ofertaPag")) $("ofertaPag").textContent = textoPagamento(o.forma_pagamento);
   $("ofertaResumo").textContent = "Retirada: " + textoEndereco(o.retirada, o.ret_numero, o.ret_complemento) +
     " | Entrega: " + textoEndereco(o.entrega, o.ent_numero, o.ent_complemento) +
     " | Item: " + o.item + " | " + Number(o.distancia_km).toLocaleString("pt-BR") + " km";
@@ -370,6 +375,7 @@ function mostrarCorrida() {
   localizacaoSegundoPlano(true); enviarLocal(true);
   show("corrida", true);
   $("corridaTitulo").textContent = coletando ? "Vá retirar o item" : "Leve até o destino";
+  if ($("corridaPag")) { $("corridaPag").textContent = textoPagamento(c.forma_pagamento); show("corridaPag", true); }
   preencherLugar(c);
   $("corridaInfo").textContent = "Item: " + c.item + " | Valor: " + money(c.preco);
   show("codigoLabel", !coletando); show("codigoEntrega", !coletando);

@@ -912,7 +912,7 @@ function textoPagamento(forma) {
   return nomes[forma] ? "Pagamento: " + nomes[forma] : "";
 }
 function escolherForma(forma) {
-  if (!{ pix: 1, dinheiro: 1, cartao: 1 }[forma]) return;
+  if (!{ pix: 1, dinheiro: 1 }[forma]) return;
   formaPagamento = forma;
   document.querySelectorAll("#formasPag button").forEach(b => b.setAttribute("aria-pressed", b.dataset.forma === forma ? "true" : "false"));
   if ($("btnConfirmar")) $("btnConfirmar").disabled = false;

@@ -82,8 +82,8 @@ try {
   });
 
   const base = await medir();
-  ok(base.caixaCss === "144px", "caixa com 144px no layout cheio (" + base.caixaCss + ")");
-  ok(quase(base.origem.height, 52) && quase(base.destino.height, 52), "campos com 52px (" + base.origem.height + " / " + base.destino.height + ")");
+  ok(base.caixaCss === "112px", "caixa com 112px no layout cheio (" + base.caixaCss + ")");
+  ok(quase(base.origem.height, 44) && quase(base.destino.height, 44), "campos com 44px (" + base.origem.height + " / " + base.destino.height + ")");
   ok(base.destino.top >= base.origem.bottom - 0.5, "campos não se sobrepõem no layout cheio");
   ok(base.destino.top - base.origem.bottom >= 4, "há espaço entre os campos (" + (base.destino.top - base.origem.bottom) + "px)");
   ok(base.visiveis.join(",") === "origem,destino", "só os dois campos da rota estão visíveis (" + base.visiveis.join(",") + ")");
@@ -95,7 +95,7 @@ try {
   await page.evaluate(() => encaixarBusca(document.getElementById("destino")));
   const janela = await medir();
   ok(janela.inner <= 360, "janela encolheu (" + janela.inner + ")");
-  ok(quase(janela.caixa.height, base.caixa.height) && janela.caixaCss === "144px", "caixa não encolheu com a janela em 340px (" + janela.caixa.height + ")");
+  ok(quase(janela.caixa.height, base.caixa.height) && janela.caixaCss === "112px", "caixa não encolheu com a janela em 340px (" + janela.caixa.height + ")");
   ok(quase(janela.origem.height, base.origem.height) && quase(janela.destino.height, base.destino.height), "altura dos campos igual com a janela encolhida");
   ok(quase(janela.origem.top, base.origem.top) && quase(janela.destino.top, base.destino.top), "posição dos campos igual com a janela encolhida");
   ok(janela.destino.top >= janela.origem.bottom - 0.5, "campos não se sobrepõem com a janela em 340px");
@@ -138,7 +138,7 @@ try {
   ok(trocou.ok === true, "visualViewport substituído sem redimensionar a janela" + (trocou.erro ? " (" + trocou.erro + ")" : ""));
   ok(trocou.inner >= 600 && trocou.vv === 340, "janela segue alta e o viewport visual está em 340 (" + trocou.inner + " / " + trocou.vv + ")");
   const overlay = await medir();
-  ok(quase(overlay.caixa.height, base.caixa.height) && overlay.caixaCss === "144px", "caixa não encolheu com visualViewport em 340 (" + overlay.caixa.height + ")");
+  ok(quase(overlay.caixa.height, base.caixa.height) && overlay.caixaCss === "112px", "caixa não encolheu com visualViewport em 340 (" + overlay.caixa.height + ")");
   ok(quase(overlay.origem.height, base.origem.height) && quase(overlay.destino.height, base.destino.height), "altura dos campos igual com o viewport visual encolhido");
   ok(quase(overlay.origem.top, base.origem.top) && quase(overlay.destino.top, base.destino.top), "posição dos campos igual com o viewport visual encolhido");
   ok(overlay.destino.top >= overlay.origem.bottom - 0.5, "campos não se sobrepõem com o viewport visual encolhido");

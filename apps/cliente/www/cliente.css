@@ -19,17 +19,17 @@ html.plano-aberto, html.plano-aberto body { overflow:hidden; }
   margin:0; padding:12px; border-radius:12px; background:#111; color:#d1fae5; white-space:pre-wrap; word-break:break-word;
   font:11px/1.4 ui-monospace, monospace; box-shadow:0 8px 28px #0008; }
 #telaPlano .plano-rolagem { display:block; height:auto; min-height:0; overflow:visible; }
-/* 112 = borda 4 + padding 8+8 + campos 44+4+44. A caixa abraça os dois campos; a lista fica fora. */
-#telaPlano .caixa-rota { flex:none !important; height:112px !important; min-height:112px !important; max-height:112px !important;
-  box-sizing:border-box; align-items:center; overflow:hidden; padding:8px 10px; gap:8px; }
-#telaPlano .trilho { flex:none !important; height:92px !important; min-height:92px !important; max-height:92px !important;
-  width:18px; padding:16px 0; box-sizing:border-box; justify-content:space-between; }
-#telaPlano .t-linha { flex:1 1 auto !important; height:auto !important; min-height:0 !important; max-height:none !important; margin:4px 0; }
-#telaPlano .campos { flex:none !important; height:92px !important; min-height:92px !important; max-height:92px !important;
-  width:auto; gap:4px; justify-content:center; }
-#telaPlano .campo, #telaPlano .campo-busca { flex:none !important; height:44px !important; min-height:44px !important; max-height:44px !important; }
+/* 92 = borda 4 + padding 3+3 + campos 40+2+40. A borda de baixo fica a 5px do destino. A lista fica fora. */
+#telaPlano .caixa-rota { flex:none !important; height:92px !important; min-height:92px !important; max-height:92px !important;
+  box-sizing:border-box; align-items:center; overflow:hidden; padding:3px 8px; gap:6px; }
+#telaPlano .trilho { flex:none !important; height:82px !important; min-height:82px !important; max-height:82px !important;
+  width:16px; padding:14px 0; box-sizing:border-box; justify-content:space-between; }
+#telaPlano .t-linha { flex:1 1 auto !important; height:auto !important; min-height:0 !important; max-height:none !important; margin:2px 0; }
+#telaPlano .campos { flex:none !important; height:82px !important; min-height:82px !important; max-height:82px !important;
+  width:auto; gap:2px; justify-content:center; }
+#telaPlano .campo, #telaPlano .campo-busca { flex:none !important; height:40px !important; min-height:40px !important; max-height:40px !important; }
 #telaPlano .campo-busca input, #telaPlano .campos input:not([type="checkbox"]) {
-  flex:none !important; height:44px !important; min-height:44px !important; max-height:44px !important;
+  flex:none !important; height:40px !important; min-height:40px !important; max-height:40px !important;
   padding:0 8px; box-sizing:border-box; }
 #telaPlano .sugestoes { display:none; position:relative !important; z-index:30; left:auto; right:auto;
   box-shadow:none; border:0; margin-top:8px; min-height:0; max-height:50vh; background:#fff; overflow-y:auto; }

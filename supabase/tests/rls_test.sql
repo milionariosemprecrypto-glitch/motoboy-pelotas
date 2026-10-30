@@ -21,6 +21,10 @@ do $$ begin perform criar_pedido('Rua A','Rua B','Documento',-31.7719,-52.3426,-
   insert into r values ('pedido exige número', false, 'aceitou'); exception when others then insert into r values ('pedido exige número', sqlerrm ilike '%número%', sqlerrm); end $$;
 insert into r select 'cliente cria pedido (preço servidor)', valor >= 8, 'R$ '||valor||' / '||km||' km' from criar_pedido('Rua A','Rua B','Documento',-31.7719,-52.3426,-31.7600,-52.3300, null, '100', null, '200', null, 'dinheiro');
 insert into r select 'pedido guarda a forma de pagamento', forma_pagamento = 'dinheiro', coalesce(forma_pagamento,'') from pedidos where cliente_id = '00000000-0000-0000-0000-0000000000c1';
+insert into r select 'reparte 20% e o motoboy fica com o resto',
+  valor_plataforma = round(preco * 0.20, 2) and valor_motoboy = preco - valor_plataforma and valor_plataforma + valor_motoboy = preco,
+  coalesce(valor_plataforma::text,'') || '+' || coalesce(valor_motoboy::text,'') || ' de ' || preco::text
+from pedidos where cliente_id = '00000000-0000-0000-0000-0000000000c1';
 insert into r select 'cliente vê o próprio pedido', count(*)=1, count(*)::text from pedidos;
 do $$ begin perform 1; insert into pedidos(cliente_id,retirada,entrega,ret_lat,ret_lng,ent_lat,ent_lng,item,distancia_km,preco) values (auth.uid(),'xxx','yyy',0,0,0,0,'x',1,0.01);
   insert into r values ('cliente não insere direto', false, 'inseriu!'); exception when others then insert into r values ('cliente não insere direto', true, sqlerrm); end $$;

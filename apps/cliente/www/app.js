@@ -169,8 +169,8 @@ function sugestoesRecentes() {
 function ligarBusca() {
   if ($("origem").dataset.busca) return;
   $("origem").dataset.busca = "1";
-  autocompletar($("origem"), $("sugOrigem"), e => definirLado("origem", e), t => marcarNoMapa("origem", t), { bias: biasBusca, recentes: sugestoesRecentes });
-  autocompletar($("destino"), $("sugDestino"), e => definirLado("destino", e), t => marcarNoMapa("destino", t), { bias: biasBusca, recentes: sugestoesRecentes });
+  autocompletar($("origem"), $("sugOrigem"), e => aoEscolherBusca("origem", e), t => marcarNoMapa("origem", t), { bias: biasBusca, recentes: sugestoesRecentes });
+  autocompletar($("destino"), $("sugDestino"), e => aoEscolherBusca("destino", e), t => marcarNoMapa("destino", t), { bias: biasBusca, recentes: sugestoesRecentes });
   $("origem").addEventListener("focus", () => focarCampoPlano("origem"));
   $("destino").addEventListener("focus", () => focarCampoPlano("destino"));
   $("origem").addEventListener("input", () => {
@@ -477,6 +477,7 @@ function definirLado(lado, e) {
     if ($("btnContinuar")) show("btnContinuar", true);
     return;
   }
+  if (e && e.aproximado) return;
   if (origem && destino && origem.lat != null && destino.lat != null && origem.numero && destino.numero) {
     if (pontoFora(origem) || pontoFora(destino)) { toast(textoFora()); return; }
     abrirConfirmar();
@@ -559,9 +560,38 @@ function continuarPlano() {
 // ---------- Ajustar no mapa (pino fixo no centro) ----------
 let pinoLado = "destino", pinoTextoFixo = "", pinoAtual = null, pinoBuscaLigada = false;
 let pinoAlvo = null, cameraPropria = 0, pinoNomeando = false, pinoSeq = 0, nomearTimer = null;
-let pinoArrastando = false, pinoAbort = null;
+let pinoArrastando = false, pinoAbort = null, pinoDigitado = null;
 const PINO_NOMEAR_MS = 500;
-function marcarNoMapa(lado, texto) { abrirPinoMapa(lado, texto); }
+function marcarNoMapa(lado, texto) {
+  const sep = separarNumero(texto || "");
+  if (sep.numero) {
+    pinoDigitado = {
+      nome: expandirNomesDeRua(sep.texto) || sep.texto,
+      numero: sep.numero,
+      complemento: sep.complemento || "",
+      bairro: ""
+    };
+    abrirPinoMapa(lado, pinoDigitado.nome);
+    toast("Este número ainda não está no mapa. Arraste até a porta.", 4000);
+    return;
+  }
+  pinoDigitado = null;
+  abrirPinoMapa(lado, texto);
+}
+function usarComoDigitado(lado, e) {
+  if (!e || e.fora || e.lat == null || !dentroPelotas(e.lat, e.lng)) {
+    toast(textoFora());
+    return;
+  }
+  pinoDigitado = { nome: e.nome, numero: e.numero, complemento: e.complemento || "", bairro: e.bairro || "" };
+  definirLado(lado, Object.assign({}, e, { aproximado: true }));
+  toast("Este número ainda não está no mapa. Arraste até a porta.", 4000);
+  abrirPinoMapa(lado, "", e);
+}
+function aoEscolherBusca(lado, e) {
+  if (e && e.digitado) usarComoDigitado(lado, e);
+  else definirLado(lado, e);
+}
 function abrirAjusteMapa() {
   const foco = $("telaPlano") && $("telaPlano").dataset.foco === "origem" ? "origem" : "destino";
   const campo = $(foco);
@@ -625,10 +655,11 @@ function agendarNomear(opcoes) {
   clearTimeout(nomearTimer);
   pinoNomeando = true;
   atualizarBotaoPino();
-  if (!(opcoes && opcoes.manterTexto)) $("pinoNome").textContent = "Buscando endereço…";
+  const manter = (opcoes && opcoes.manterTexto) || (pinoDigitado && pinoDigitado.numero);
+  if (!manter) $("pinoNome").textContent = "Buscando endereço…";
   nomearTimer = setTimeout(nomearPino, PINO_NOMEAR_MS);
 }
-function abrirPinoMapa(lado, texto) {
+function abrirPinoMapa(lado, texto, inicio) {
   pinoLado = lado === "origem" ? "origem" : "destino";
   pinoTextoFixo = texto || "";
   telaSobre("telaPino", true);
@@ -672,6 +703,8 @@ function abrirPinoMapa(lado, texto) {
       if (pinoAbort) { try { pinoAbort.abort(); } catch (err) {} }
       clearTimeout(nomearTimer);
       pinoNomeando = false;
+      if (e.digitado) pinoDigitado = { nome: e.nome, numero: e.numero, complemento: e.complemento || "", bairro: e.bairro || "" };
+      else pinoDigitado = null;
       centralizarPino(e, 17, 0);
       const c = pontoDoPino();
       const linha = typeof linhaDoPino === "function" ? linhaDoPino(e.nome, e.numero, e.bairro) : (e.titulo || e.nome);
@@ -679,8 +712,9 @@ function abrirPinoMapa(lado, texto) {
         lat: c.lat, lng: c.lng, nome: e.nome, numero: e.numero || "S/N",
         complemento: e.complemento || "", bairro: e.bairro || "", fora: false, tipo: e.tipo || "poi"
       };
-      $("pinoNome").textContent = linha || e.titulo || e.nome;
-      $("buscaPino").value = e.titulo || e.nome;
+      $("pinoNome").textContent = e.digitado ? linhaDoPino(e.nome, e.numero, e.bairro) : (linha || e.titulo || e.nome);
+      $("buscaPino").value = e.digitado ? textoCampo(e.nome, e.numero) : (e.titulo || e.nome);
+      if (e.digitado && $("pinoDica")) $("pinoDica").textContent = "Número novo. Arraste o mapa até a porta.";
       atualizarLimpar();
       atualizarBotaoPino();
     }, t => {
@@ -702,18 +736,34 @@ function abrirPinoMapa(lado, texto) {
   const titulo = $("folhaPino").querySelector("h2");
   if (titulo) titulo.textContent = "Ajustar no mapa";
   const dica = $("pinoDica");
-  if (dica) dica.textContent = (pinoLado === "origem" ? "Retirada" : "Entrega") + " · arraste o mapa até o ponto";
-  const escolhido = pinoLado === "origem" ? origem : destino;
-  const c = escolhido && escolhido.lat != null ? escolhido
-    : (aqui && aqui.lat != null && dentroPelotas(aqui.lat, aqui.lng) ? aqui : null);
-  const ll = c ? { lat: c.lat, lng: c.lng } : { lat: PELOTAS[0], lng: PELOTAS[1] };
-  if (c && c.nome && !texto) {
-    pinoAtual = { lat: ll.lat, lng: ll.lng, nome: c.nome, numero: c.numero || "S/N", complemento: c.complemento || "", bairro: c.bairro || "", fora: !!c.fora };
-    $("pinoNome").textContent = (typeof linhaDoPino === "function" ? linhaDoPino(c.nome, c.numero, c.bairro) : "") || c.nome;
+  if (dica) dica.textContent = pinoDigitado
+    ? "Número novo. Arraste o mapa até a porta."
+    : ((pinoLado === "origem" ? "Retirada" : "Entrega") + " · arraste o mapa até o ponto");
+  let ll;
+  let c;
+  if (inicio && inicio.lat != null && dentroPelotas(+inicio.lat, +inicio.lng)) {
+    ll = { lat: +inicio.lat, lng: +inicio.lng };
+    c = inicio;
+    texto = "";
+  } else {
+    const escolhido = pinoLado === "origem" ? origem : destino;
+    c = escolhido && escolhido.lat != null ? escolhido
+      : (aqui && aqui.lat != null && dentroPelotas(aqui.lat, aqui.lng) ? aqui : null);
+    ll = c ? { lat: c.lat, lng: c.lng } : { lat: PELOTAS[0], lng: PELOTAS[1] };
+  }
+  if ((c && c.nome && !texto) || (pinoDigitado && pinoDigitado.nome && !texto)) {
+    const num = (pinoDigitado && pinoDigitado.numero) || (c && c.numero) || "S/N";
+    const comp = (pinoDigitado && pinoDigitado.complemento) || (c && c.complemento) || "";
+    const nome = (pinoDigitado && pinoDigitado.nome) || (c && c.nome);
+    const bairro = (pinoDigitado && pinoDigitado.bairro) || (c && c.bairro) || "";
+    pinoAtual = { lat: ll.lat, lng: ll.lng, nome: nome, numero: num, complemento: comp, bairro: bairro, fora: !!(c && c.fora) };
+    $("pinoNome").textContent = (typeof linhaDoPino === "function" ? linhaDoPino(nome, num, bairro) : "") || nome;
     pinoNomeando = false;
   } else if (texto) {
-    pinoAtual = { lat: ll.lat, lng: ll.lng, nome: texto, numero: "S/N", fora: false };
-    $("pinoNome").textContent = texto;
+    const num = (pinoDigitado && pinoDigitado.numero) || "S/N";
+    const nome = (pinoDigitado && pinoDigitado.nome) || texto;
+    pinoAtual = { lat: ll.lat, lng: ll.lng, nome: nome, numero: num, complemento: (pinoDigitado && pinoDigitado.complemento) || "", fora: false };
+    $("pinoNome").textContent = (typeof linhaDoPino === "function" ? linhaDoPino(nome, num, "") : "") || nome;
     pinoNomeando = false;
   } else pinoAtual = null;
   atualizarBotaoPino();
@@ -753,25 +803,30 @@ async function nomearPino() {
   }
   const base = pinoLado === "origem" ? origem : destino;
   let numero = end && end.numero ? end.numero : "";
-  if (!numero && base && base.numero && base.numero !== "S/N" && pertoDoPino(base, agora, 30)) numero = base.numero;
-  const nome = (end && end.nome) || pinoTextoFixo || "Ponto no mapa";
-  const bairro = (end && end.bairro) || "";
-  const linha = linhaDoPino((end && (end.rua || end.nome)) || nome, numero, bairro) || nome;
+  if (pinoDigitado && pinoDigitado.numero) numero = pinoDigitado.numero;
+  else if (!numero && base && base.numero && base.numero !== "S/N" && pertoDoPino(base, agora, 30)) numero = base.numero;
+  const nome = (pinoDigitado && pinoDigitado.nome) || (end && end.nome) || pinoTextoFixo || "Ponto no mapa";
+  const bairro = (pinoDigitado && pinoDigitado.bairro) || (end && end.bairro) || "";
+  const comp = (pinoDigitado && pinoDigitado.complemento) || "";
+  const linha = linhaDoPino(nome, numero, bairro) || nome;
   pinoNomeando = false;
   pinoAtual = {
     lat: agora.lat, lng: agora.lng, nome, numero: numero || "S/N",
-    complemento: "", bairro, fora: false, tipo: (end && end.tipo) || "poi"
+    complemento: comp, bairro, fora: false, tipo: (end && end.tipo) || "poi"
   };
   $("pinoNome").textContent = linha || nome;
   atualizarBotaoPino();
 }
 function fecharPino() {
+  const seguir = !!(pinoDigitado && origem && destino && origem.numero && destino.numero && origem.lat != null && destino.lat != null);
   clearTimeout(nomearTimer);
   pinoSeq++;
   pinoArrastando = false;
+  pinoDigitado = null;
   levantarPino(false);
   if (pinoAbort) { try { pinoAbort.abort(); } catch (e) {} }
   telaSobre("telaPino", false);
+  if (seguir && !pontoFora(origem) && !pontoFora(destino)) abrirConfirmar();
 }
 function confirmarPino() {
   if (pinoArrastando || pinoNomeando || !pinoAtual || !pinoAtual.nome) return;
@@ -782,12 +837,16 @@ function confirmarPino() {
     atualizarBotaoPino();
     return;
   }
+  const guardado = pinoDigitado;
   const ponto = {
-    nome: pinoAtual.nome, lat: c.lat, lng: c.lng,
-    numero: pinoAtual.numero || "S/N", complemento: pinoAtual.complemento || "", bairro: pinoAtual.bairro || "", tipo: pinoAtual.tipo || "poi"
+    nome: (guardado && guardado.nome) || pinoAtual.nome, lat: c.lat, lng: c.lng,
+    numero: (guardado && guardado.numero) || pinoAtual.numero || "S/N",
+    complemento: (guardado && guardado.complemento) || pinoAtual.complemento || "",
+    bairro: (guardado && guardado.bairro) || pinoAtual.bairro || "", tipo: pinoAtual.tipo || "poi"
   };
   const lado = pinoLado;
   pinoTextoFixo = "";
+  pinoDigitado = null;
   fecharPino();
   if (lado === "origem") definirLado("origem", ponto);
   else escolherDestino(ponto);
@@ -877,6 +936,7 @@ async function abrirConfirmar() {
   etaMin = null;
   desenharConfirmacao();
   $("valor").textContent = "—"; $("km").textContent = "Calculando rota…";
+  mostrarNotaTaxa(null);
   rota = await calcularRota(origem, destino);
   if (rota && rota.segundos) etaMin = Math.max(1, Math.round(rota.segundos / 60));
   desenharConfirmacao();
@@ -895,6 +955,7 @@ async function abrirConfirmar() {
     return;
   }
   $("valor").textContent = money(data[0].preco);
+  mostrarNotaTaxa(data[0]);
   const km = Number(data[0].distancia_km).toLocaleString("pt-BR");
   const pelaRua = data[0].fonte === "rota" && rota;
   $("km").textContent = km + " km" + (pelaRua ? " pela rua" : " · distância estimada") + (etaMin ? " · ~" + etaMin + " min" : "");
@@ -906,13 +967,49 @@ function voltarDoConfirmar() { alojarNumeros(false); telaSobre("telaConfirmar", 
 function params() {
   return { p_ret_lat: origem.lat, p_ret_lng: origem.lng, p_ent_lat: destino.lat, p_ent_lng: destino.lng, p_rota_km: rota ? Number(rota.km.toFixed(2)) : null };
 }
+async function registrarCobranca(pedidoId, forma) {
+  const sessao = db.auth && db.auth.getSession ? await db.auth.getSession() : null;
+  const token = sessao && sessao.data && sessao.data.session && sessao.data.session.access_token;
+  if (token && (forma === "pix" || forma === "cartao") && typeof SUPABASE_URL === "string") {
+    try {
+      const r = await fetch(SUPABASE_URL + "/functions/v1/cobranca", {
+        method: "POST",
+        headers: { Authorization: "Bearer " + token, apikey: SUPABASE_KEY, "Content-Type": "application/json" },
+        body: JSON.stringify({ pedido_id: pedidoId })
+      });
+      if (r.ok) {
+        const j = await r.json();
+        if (j && j.checkout_url) { try { window.open(j.checkout_url, "_blank"); } catch (e) {} }
+        if (j && (j.mensagem || j.modo)) return j;
+      }
+    } catch (e) {}
+  }
+  const resp = await db.rpc("iniciar_cobranca", { p_pedido: pedidoId });
+  if (resp.error) return { mensagem: "Pedido criado. O registro do pagamento ficou para a entrega." };
+  const row = resp.data && resp.data[0];
+  if (row && row.checkout_url) { try { window.open(row.checkout_url, "_blank"); } catch (e) {} }
+  return row || null;
+}
+function mostrarNotaTaxa(row) {
+  const el = $("notaTaxa");
+  if (!el) return;
+  if (!row || row.preco == null || !isFinite(Number(row.preco))) { el.textContent = ""; return; }
+  const taxa = row.taxa_percent != null ? Number(row.taxa_percent) : (typeof TAXA_PLATAFORMA === "number" ? TAXA_PLATAFORMA : 20);
+  if (formaPagamento === "dinheiro") {
+    el.textContent = "Total " + money(row.preco) + ". Você paga esse valor ao motoboy, em dinheiro. A parte da plataforma entra no acerto depois, sem cobrança a mais.";
+  } else if (formaPagamento === "pix" || formaPagamento === "cartao") {
+    el.textContent = "Total " + money(row.preco) + ". No PIX ou no cartão a cobrança é desse total. A parte da plataforma fica retida na cobrança. Você não paga nada a mais.";
+  } else {
+    el.textContent = "Total " + money(row.preco) + ". A taxa da plataforma (" + taxa + "%) entra só na conta. Você paga esse total ao motoboy.";
+  }
+}
 let formaPagamento = "";
 function textoPagamento(forma) {
   const nomes = { pix: "PIX", dinheiro: "Dinheiro", cartao: "Cartão" };
   return nomes[forma] ? "Pagamento: " + nomes[forma] : "";
 }
 function escolherForma(forma) {
-  if (!{ pix: 1, dinheiro: 1 }[forma]) return;
+  if (!{ pix: 1, dinheiro: 1, cartao: 1 }[forma]) return;
   formaPagamento = forma;
   document.querySelectorAll("#formasPag button").forEach(b => b.setAttribute("aria-pressed", b.dataset.forma === forma ? "true" : "false"));
   if ($("btnConfirmar")) $("btnConfirmar").disabled = false;
@@ -945,11 +1042,13 @@ $("deliveryForm").addEventListener("submit", async ev => {
       ...params() });
     if (error) throw error;
     const p = data[0];
+    let cobranca = null;
+    try { cobranca = await registrarCobranca(p.pedido_id, formaPagamento); } catch (err) { cobranca = null; }
     telaSobre("telaConfirmar", false); telaSobre("telaPlano", false);
     mostrarPedido({ id: p.pedido_id, retirada: nomeCheio(origem).trim(), entrega: nomeCheio(destino).trim(), item: $("tipo").value, preco: p.valor,
       status: "procurando", codigo: p.cod, ret_lat: origem.lat, ret_lng: origem.lng, ent_lat: destino.lat, ent_lng: destino.lng,
       ret_numero: origem.numero, ret_complemento: origem.complemento, ent_numero: destino.numero, ent_complemento: destino.complemento,
-      forma_pagamento: formaPagamento });
+      forma_pagamento: formaPagamento, cobranca: cobranca });
   } catch (e) { toast("Não foi possível pedir: " + erroMsg(e), 4000); }
   finally { botao.disabled = false; }
 });
@@ -975,6 +1074,12 @@ async function mostrarPedido(p) {
   telaSobre("pedido", true); show("btnCancelar", true); show("btnNovo", false); show("avaliar", false); show("btnWhats", true);
   const linhaPag = textoPagamento(p.forma_pagamento);
   if ($("pedidoPag")) { $("pedidoPag").textContent = linhaPag; show("pedidoPag", !!linhaPag); }
+  const aviso = $("avisoCobranca");
+  if (aviso) {
+    const msg = p.cobranca && p.cobranca.mensagem;
+    aviso.textContent = msg || "";
+    show("avisoCobranca", !!msg);
+  }
   $("resumo").textContent = textoEndereco(p.retirada, p.ret_numero, p.ret_complemento) + " → " +
     textoEndereco(p.entrega, p.ent_numero, p.ent_complemento) + " · " + p.item + " · " + money(p.preco);
   if (!mapaPed) {

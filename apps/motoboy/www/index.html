@@ -125,6 +125,7 @@
           <div id="corrida" class="hidden">
             <h2 id="corridaTitulo"></h2>
             <div id="corridaPag" class="pag-destaque hidden"></div>
+            <div id="corridaRecebe" class="recebe-moto hidden"></div>
             <label for="codigoEntrega" id="codigoLabel" class="hidden">Código de confirmação do destinatário</label>
             <input id="codigoEntrega" class="hidden" inputmode="numeric" maxlength="4" placeholder="4 dígitos">
             <button id="corridaBtn" class="primary" type="button" onclick="avancar()"></button>
@@ -146,10 +147,42 @@
           </div>
         </div>
         <div id="motoGanhos" class="hidden">
-          <div class="painel-sub">Ganhos de hoje</div>
+          <div class="painel-sub">Saldo a receber</div>
           <div id="ganhosTotal" class="total">R$ 0,00</div>
           <div id="ganhosResumo" class="painel-sub"></div>
+          <p id="ganhosDebito" class="small"></p>
+          <p id="ganhosPronto" class="small"></p>
+          <button class="secondary" type="button" onclick="abrirReceber()">Completar cadastro para receber</button>
+          <details class="como-taxa">
+            <summary>Como funciona a taxa</summary>
+            <p class="small">O cliente paga o preço inteiro da corrida. Em PIX e cartão, a parte da plataforma fica retida na cobrança e você recebe o restante quando o cadastro de recebimento está pronto. Em dinheiro, você fica com o valor na hora e a parte da plataforma vira um débito, descontado nos próximos repasses de PIX ou cartão. A porcentagem está em 20% e não muda o que o cliente paga.</p>
+          </details>
           <div id="ganhosLista"></div>
+          <h3 class="painel-sub">Informe para o imposto de renda</h3>
+          <div class="linha-ir">
+            <label for="irAno">Ano</label><input id="irAno" inputmode="numeric" maxlength="4" value="2026">
+            <label for="irMes">Mês</label><input id="irMes" inputmode="numeric" maxlength="2" placeholder="1–12 ou vazio">
+          </div>
+          <p id="irResumo" class="small"></p>
+          <button class="secondary" type="button" onclick="carregarIr()">Ver período</button>
+          <button class="secondary" type="button" onclick="baixarIr()">Baixar CSV</button>
+          <div id="irLista"></div>
+          <div id="telaReceber" class="hidden">
+            <h3 class="painel-sub">Receber pela plataforma</h3>
+            <p class="small">Sem a chave PIX, os repasses de PIX e cartão ficam retidos. Dinheiro continua na hora com o cliente.</p>
+            <label for="rxTipo">Tipo da chave PIX</label>
+            <select id="rxTipo"><option value="cpf">CPF</option><option value="email">E-mail</option><option value="telefone">Celular</option><option value="aleatoria">Aleatória</option></select>
+            <label for="rxChave">Chave PIX</label><input id="rxChave" maxlength="80" autocomplete="off">
+            <label for="rxTitular">Nome do titular</label><input id="rxTitular" maxlength="80">
+            <label for="rxCpf">CPF do titular</label><input id="rxCpf" inputmode="numeric" maxlength="14" placeholder="Se já enviou no cadastro, pode repetir">
+            <label for="rxBanco">Banco (opcional)</label><input id="rxBanco" maxlength="40">
+            <label for="rxAgencia">Agência (opcional)</label><input id="rxAgencia" maxlength="10">
+            <label for="rxConta">Conta (opcional)</label><input id="rxConta" maxlength="20">
+            <label for="rxTipoConta">Tipo da conta</label>
+            <select id="rxTipoConta"><option value="">Não informar</option><option value="corrente">Corrente</option><option value="poupanca">Poupança</option></select>
+            <button class="primary" type="button" onclick="salvarReceber()">Salvar dados para receber</button>
+            <p id="rxMsg" class="small"></p>
+          </div>
           <button class="secondary" type="button" onclick="motoAba('inicio')">Voltar ao mapa</button>
           <button class="link" type="button" onclick="db.auth.signOut()">Sair da conta</button>
           <a class="link" href="https://eja-site.pages.dev/termos-motoboy/" target="_blank">Termos do Motoboy</a>
@@ -168,6 +201,7 @@
   <div class="oferta-topo"><span class="pill">Nova corrida</span><span class="pulso"></span></div>
   <div><h2 id="ofertaPreco"></h2></div>
   <div id="ofertaPag" class="pag-destaque">Pagamento: —</div>
+  <div id="ofertaRecebe" class="recebe-moto"></div>
   <div id="ofertaResumo" class="small"></div>
   <div class="tempo"><div id="barraTempo"></div></div>
   <button class="primary" onclick="aceitarCorrida()">Aceitar corrida</button>

@@ -200,10 +200,23 @@ function textoPagamento(forma) {
   const nomes = { pix: "PIX", dinheiro: "Dinheiro", cartao: "Cartão" };
   return "Pagamento: " + (nomes[forma] || "a combinar");
 }
+function textoRecebe(o) {
+  if (!o || o.preco == null) return "";
+  const preco = Number(o.preco);
+  const taxa = o.taxa_percent != null ? Number(o.taxa_percent) : (typeof TAXA_PLATAFORMA === "number" ? TAXA_PLATAFORMA : 20);
+  let recebe = o.valor_motoboy != null && o.valor_motoboy !== "" ? Number(o.valor_motoboy) : NaN;
+  if (!isFinite(recebe) && isFinite(preco)) {
+    const plat = Math.round(preco * taxa) / 100;
+    recebe = Math.round((preco - plat) * 100) / 100;
+  }
+  if (!isFinite(recebe)) return "";
+  return "Você recebe " + money(recebe) + " (plataforma " + taxa + "%)";
+}
 function mostrarOferta(o) {
   ofertaAtual = o;
   $("ofertaPreco").textContent = money(o.preco);
   if ($("ofertaPag")) $("ofertaPag").textContent = textoPagamento(o.forma_pagamento);
+  if ($("ofertaRecebe")) $("ofertaRecebe").textContent = textoRecebe(o);
   $("ofertaResumo").textContent = "Retirada: " + textoEndereco(o.retirada, o.ret_numero, o.ret_complemento) +
     " | Entrega: " + textoEndereco(o.entrega, o.ent_numero, o.ent_complemento) +
     " | Item: " + o.item + " | " + Number(o.distancia_km).toLocaleString("pt-BR") + " km";
@@ -376,6 +389,7 @@ function mostrarCorrida() {
   show("corrida", true);
   $("corridaTitulo").textContent = coletando ? "Vá retirar o item" : "Leve até o destino";
   if ($("corridaPag")) { $("corridaPag").textContent = textoPagamento(c.forma_pagamento); show("corridaPag", true); }
+  if ($("corridaRecebe")) { $("corridaRecebe").textContent = textoRecebe(c); show("corridaRecebe", true); }
   preencherLugar(c);
   $("corridaInfo").textContent = "Item: " + c.item + " | Valor: " + money(c.preco);
   show("codigoLabel", !coletando); show("codigoEntrega", !coletando);

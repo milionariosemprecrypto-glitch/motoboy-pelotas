@@ -300,7 +300,7 @@ async function buscarHttp(url, init) {
   const nativo = httpNativo();
   if (nativo && typeof nativo.get === "function") {
     try {
-      const versao = typeof APP_VERSAO !== "undefined" ? APP_VERSAO : "1.14";
+      const versao = typeof APP_VERSAO !== "undefined" ? APP_VERSAO : "1.15";
       const res = await nativo.get({
         url: String(url),
         headers: {
@@ -502,6 +502,49 @@ function temNaArea(lista) {
   return (lista || []).some(e => e && !e.fora);
 }
 
+function ruaParecida(nome, consulta) {
+  const n = semAcento(nome);
+  const q = semAcento(expandirNomesDeRua(separarNumero(consulta).texto || consulta));
+  if (!n || !q) return false;
+  if (n === q || n.indexOf(q) === 0 || q.indexOf(n) === 0) return true;
+  const tokens = q.split(" ").filter(t => t.length > 2 && !/^(rua|avenida|travessa|estrada|rodovia|praca|alameda)$/.test(t));
+  if (!tokens.length) return false;
+  const hits = tokens.filter(t => n.indexOf(t) !== -1).length;
+  return hits >= Math.min(2, tokens.length) && hits / tokens.length >= 0.6;
+}
+
+// Número que o OSM ainda não tem: usa o centro da rua em Pelotas e guarda o número digitado.
+// Sem rua dentro da área, devolve null. Aí a tela só abre o mapa, sem inventar coordenada.
+function montarOpcaoDigitada(texto, lista) {
+  const sep = separarNumero(texto);
+  if (!sep.numero) return null;
+  const dentro = (lista || []).filter(e => e && !e.digitado && !e.fora && e.lat != null && dentroPelotas(e.lat, e.lng));
+  if (!dentro.length) return null;
+  const qNum = semAcento(sep.numero);
+  if (dentro.some(e => e.numeroOsm && semAcento(e.numeroOsm) === qNum && ruaParecida(e.nome, sep.texto))) return null;
+  const rua = dentro.filter(e => ruaParecida(e.nome, sep.texto))[0];
+  if (!rua) return null;
+  const comp = sep.complemento || "";
+  const linha = textoCampo(rua.nome, sep.numero) + (comp ? " — " + comp : "");
+  return {
+    digitado: true,
+    aproximado: true,
+    nome: rua.nome,
+    numero: sep.numero,
+    complemento: comp,
+    bairro: rua.bairro || "",
+    cidade: rua.cidade || "Pelotas",
+    uf: rua.uf || "RS",
+    cep: rua.cep || "",
+    lat: rua.lat,
+    lng: rua.lng,
+    tipo: "rua",
+    fora: false,
+    titulo: "Usar como digitado",
+    subtitulo: linha + " · número novo, ajuste o pino"
+  };
+}
+
 // Não cola "Pelotas" na consulta do Photon: "Av Brasil Pelotas" passa a achar o aeroporto
 // e some com a Avenida Brasil. O recorte é o bbox. O viés é Pelotas, nunca um GPS de fora.
 async function buscarEnderecos(texto, buscarOuOpts) {
@@ -594,6 +637,8 @@ async function buscarEnderecos(texto, buscarOuOpts) {
     e.titulo = linhas.titulo;
     e.subtitulo = linhas.subtitulo;
   });
+  const digitado = montarOpcaoDigitada(texto, lista);
+  if (digitado) lista.push(digitado);
   return fim(lista);
 }
 
@@ -622,7 +667,7 @@ function pintarSugestoes(lista, itens, recente, aoEscolher) {
     const item = document.createElement("button");
     item.type = "button";
     const icone = recente ? "recente" : (e.tipo === "poi" ? "poi" : "rua");
-    item.className = "sugestao sugestao-" + icone;
+    item.className = "sugestao sugestao-" + icone + (e.digitado ? " sugestao-digitada" : "");
     item.innerHTML = '<i class="sug-ico">' + ICONE_SUGESTAO[icone] + '</i><span class="sug-txt"><b></b><span></span></span>';
     const linhas = e.titulo ? { titulo: e.titulo, subtitulo: e.subtitulo || "" } : linhasEndereco(e);
     item.querySelector("b").textContent = linhas.titulo || e.nome || "";
@@ -642,7 +687,8 @@ function pintarSugestoes(lista, itens, recente, aoEscolher) {
     };
     lista.append(item);
   });
-  if (itens.length) mostrarEstadoBusca(lista, "Escolha um endereço");
+  if (itens.some(e => e.digitado)) mostrarEstadoBusca(lista, "Número novo: use como digitado ou ajuste o pino");
+  else if (itens.length) mostrarEstadoBusca(lista, "Escolha um endereço");
 }
 
 function mostrarEstadoBusca(lista, texto) {
@@ -668,8 +714,8 @@ function avisoSugestao(lista, texto, aoMarcarMapa, consulta) {
   if (aoMarcarMapa && consulta) {
     const marcar = document.createElement("button");
     marcar.type = "button";
-    marcar.className = "sugestao sugestao-mapa";
-    marcar.textContent = "Usar este endereço e marcar no mapa";
+    marcar.className = "sugestao sugestao-mapa sugestao-digitada";
+    marcar.textContent = separarNumero(consulta || "").numero ? "Usar como digitado" : "Usar este endereço e marcar no mapa";
     marcar.onclick = () => { lista.innerHTML = ""; aoMarcarMapa(consulta); };
     lista.append(marcar);
   }
@@ -730,7 +776,7 @@ function autocompletar(input, lista, aoEscolher, aoMarcarMapa, opts) {
     if (minha !== seq) return;
     if (!res.length) avisoSugestao(lista, "Nenhum resultado.", aoMarcarMapa, t);
     else pintarSugestoes(lista, res, false, e => {
-      input.value = e.titulo || e.nome || "";
+      input.value = e.digitado ? textoCampo(e.nome, e.numero) : (e.titulo || e.nome || "");
       input.dataset.escolhido = "1";
       aoEscolher(e);
     });

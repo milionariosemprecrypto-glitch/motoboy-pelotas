@@ -206,6 +206,53 @@ assert.match(comNumero.subtitulo, /Pelotas - RS/);
 assert.match(comNumero.subtitulo, /96025-000/);
 assert.equal(run(`textoEndereco(${JSON.stringify(comNumero.nome)}, ${JSON.stringify(comNumero.numero)}, null)`), "Avenida Brasil, nº 1234");
 
+const numeroNovo = await run(`(async () => {
+  const buscar = async (url) => {
+    if (String(url).includes("nominatim")) return { ok: true, json: async () => [] };
+    return { ok: true, json: async () => ({ features: [{
+      geometry: { coordinates: [-52.352, -31.774] },
+      properties: { name: "Rua Nova do Loteamento", district: "Fragata", city: "Pelotas", state: "Rio Grande do Sul", osm_key: "highway", osm_value: "residential" }
+    }] }) };
+  };
+  const lista = await buscarEnderecos("Rua Nova do Loteamento, 910 - fundos", { buscar, bias: [-31.77, -52.34] });
+  const d = lista.filter(e => e.digitado)[0];
+  return { numRua: lista[0].numero, d };
+})()`);
+assert.equal(numeroNovo.numRua, "910");
+assert.equal(numeroNovo.d.titulo, "Usar como digitado");
+assert.equal(numeroNovo.d.numero, "910");
+assert.equal(numeroNovo.d.complemento, "fundos");
+assert.equal(numeroNovo.d.lat, -31.774);
+assert.equal(numeroNovo.d.fora, false);
+assert.equal(numeroNovo.d.nome, "Rua Nova do Loteamento");
+
+const numeroExato = await run(`(async () => {
+  const buscar = async (url) => {
+    if (String(url).includes("nominatim")) return { ok: true, json: async () => [] };
+    return { ok: true, json: async () => ({ features: [{
+      geometry: { coordinates: [-52.352, -31.774] },
+      properties: { name: "Rua Nova do Loteamento", housenumber: "910", district: "Fragata", city: "Pelotas", osm_key: "highway", osm_value: "residential" }
+    }] }) };
+  };
+  const lista = await buscarEnderecos("Rua Nova do Loteamento 910", { buscar, bias: [-31.77, -52.34] });
+  return lista.some(e => e.digitado);
+})()`);
+assert.equal(numeroExato, false, "número que já está no mapa não pede usar como digitado");
+
+const numeroFora = await run(`(async () => {
+  const buscar = async (url) => {
+    if (String(url).includes("nominatim")) return { ok: true, json: async () => [] };
+    return { ok: true, json: async () => ({ features: [{
+      geometry: { coordinates: [-52.18, -31.417] },
+      properties: { name: "Rua Reinaldo Härter", city: "Turuçu", state: "Rio Grande do Sul", osm_key: "highway", osm_value: "residential" }
+    }] }) };
+  };
+  const lista = await buscarEnderecos("Rua Reinaldo Härter 50", { buscar, bias: [-31.7719, -52.3426] });
+  return { fora: lista[0] && lista[0].fora, digitado: lista.some(e => e.digitado) };
+})()`);
+assert.equal(numeroFora.fora, true);
+assert.equal(numeroFora.digitado, false, "rua fora da área não vira endereço digitado");
+
 const semCidade = await run(`(async () => {
   const buscar = async (url) => {
     if (String(url).includes("nominatim")) return { ok: true, json: async () => [] };

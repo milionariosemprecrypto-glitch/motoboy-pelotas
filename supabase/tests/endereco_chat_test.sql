@@ -25,9 +25,17 @@ exception when others then insert into r values ('sem pagamento é recusado', sq
 do $$ begin perform criar_pedido('Rua A','Rua B','Documento',-31.7719,-52.3426,-31.7600,-52.3300, null, '10', null, '20', null, 'boleto');
   insert into r values ('pagamento inválido é recusado', false, 'aceitou');
 exception when others then insert into r values ('pagamento inválido é recusado', sqlerrm ilike '%pagar%', sqlerrm); end $$;
-do $$ begin perform criar_pedido('Rua A','Rua B','Documento',-31.7719,-52.3426,-31.7600,-52.3300, null, '10', null, '20', null, 'cartao');
-  insert into r values ('cartão não é mais aceito', false, 'aceitou');
-exception when others then insert into r values ('cartão não é mais aceito', sqlerrm ilike '%pagar%', sqlerrm); end $$;
+do $$
+declare v_id uuid;
+begin
+  select c.pedido_id into v_id from criar_pedido(
+    'Rua A','Rua B','Documento',-31.7719,-52.3426,-31.7600,-52.3300, null, '10', null, '20', null, 'cartao') c;
+  if not cancelar_pedido(v_id) then
+    insert into r values ('cartão volta a ser aceito no pedido', false, 'não cancelou');
+  else
+    insert into r values ('cartão volta a ser aceito no pedido', true, 'ok');
+  end if;
+exception when others then insert into r values ('cartão volta a ser aceito no pedido', false, sqlerrm); end $$;
 
 -- criar_pedido devolve pedido_id/valor/km/cod; o número fica na linha de pedidos.
 do $$
@@ -132,12 +140,15 @@ begin
     check (forma_pagamento in ('pix', 'dinheiro')) not valid;
   insert into r select 'pedido antigo com cartão continua legível', forma_pagamento = 'cartao', coalesce(forma_pagamento,'')
     from pedidos where id = v_id;
+  alter table public.pedidos drop constraint pedidos_forma_pagamento_check;
+  alter table public.pedidos add constraint pedidos_forma_pagamento_check
+    check (forma_pagamento is null or forma_pagamento in ('pix', 'dinheiro', 'cartao'));
 end $$;
 do $$ begin
-  insert into pedidos (cliente_id, retirada, entrega, ret_lat, ret_lng, ent_lat, ent_lng, item, distancia_km, preco, forma_pagamento)
-  values ('00000000-0000-0000-0000-0000000000e2','Rua Nova Cartão','Rua X',-31.77,-52.34,-31.76,-52.33,'cartao-novo',1,8,'cartao');
-  insert into r values ('constraint recusa cartão novo', false, 'inseriu');
-exception when others then insert into r values ('constraint recusa cartão novo', sqlerrm ilike '%forma_pagamento%', sqlerrm); end $$;
+  insert into pedidos (cliente_id, retirada, entrega, ret_lat, ret_lng, ent_lat, ent_lng, item, distancia_km, preco, status, entregue_em, forma_pagamento)
+  values ('00000000-0000-0000-0000-0000000000e2','Rua Nova Cartão','Rua do Cartão',-31.77,-52.34,-31.76,-52.33,'cartao-novo',1,8,'entregue', now(), 'cartao');
+  insert into r values ('cartão volta a ser aceito', true, 'ok');
+exception when others then insert into r values ('cartão volta a ser aceito', false, sqlerrm); end $$;
 insert into pedidos (cliente_id, retirada, entrega, ret_lat, ret_lng, ent_lat, ent_lng, item, distancia_km, preco, status, entregue_em, ret_numero, ent_numero)
 values ('00000000-0000-0000-0000-0000000000e2','Rua Velha','Rua Velha 2',-31.77,-52.34,-31.76,-52.33,'velho',1,8,'entregue', now() - interval '91 days', '9', '8');
 insert into mensagens (pedido_id, autor_id, texto)

@@ -7,3 +7,9 @@ verify_jwt = false   # valida o JWT dentro da função (precisa responder ao pre
 
 [functions.retencao]
 verify_jwt = false   # chamada pelo pg_cron; protegida pelo header x-eja-secret
+
+[functions.cobranca]
+verify_jwt = false   # o app manda o JWT; a função confere o usuário e responde o preflight
+
+[functions.webhook-mp]
+verify_jwt = false   # o Mercado Pago chama sem JWT do Supabase

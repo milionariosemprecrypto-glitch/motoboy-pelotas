@@ -300,7 +300,7 @@ async function buscarHttp(url, init) {
   const nativo = httpNativo();
   if (nativo && typeof nativo.get === "function") {
     try {
-      const versao = typeof APP_VERSAO !== "undefined" ? APP_VERSAO : "1.15";
+      const versao = typeof APP_VERSAO !== "undefined" ? APP_VERSAO : "1.16";
       const res = await nativo.get({
         url: String(url),
         headers: {

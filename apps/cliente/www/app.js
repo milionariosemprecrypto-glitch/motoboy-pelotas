@@ -967,12 +967,41 @@ function voltarDoConfirmar() { alojarNumeros(false); telaSobre("telaConfirmar", 
 function params() {
   return { p_ret_lat: origem.lat, p_ret_lng: origem.lng, p_ent_lat: destino.lat, p_ent_lng: destino.lng, p_rota_km: rota ? Number(rota.km.toFixed(2)) : null };
 }
+async function registrarCobranca(pedidoId, forma) {
+  const sessao = db.auth && db.auth.getSession ? await db.auth.getSession() : null;
+  const token = sessao && sessao.data && sessao.data.session && sessao.data.session.access_token;
+  if (token && (forma === "pix" || forma === "cartao") && typeof SUPABASE_URL === "string") {
+    try {
+      const r = await fetch(SUPABASE_URL + "/functions/v1/cobranca", {
+        method: "POST",
+        headers: { Authorization: "Bearer " + token, apikey: SUPABASE_KEY, "Content-Type": "application/json" },
+        body: JSON.stringify({ pedido_id: pedidoId })
+      });
+      if (r.ok) {
+        const j = await r.json();
+        if (j && j.checkout_url) { try { window.open(j.checkout_url, "_blank"); } catch (e) {} }
+        if (j && (j.mensagem || j.modo)) return j;
+      }
+    } catch (e) {}
+  }
+  const resp = await db.rpc("iniciar_cobranca", { p_pedido: pedidoId });
+  if (resp.error) return { mensagem: "Pedido criado. O registro do pagamento ficou para a entrega." };
+  const row = resp.data && resp.data[0];
+  if (row && row.checkout_url) { try { window.open(row.checkout_url, "_blank"); } catch (e) {} }
+  return row || null;
+}
 function mostrarNotaTaxa(row) {
   const el = $("notaTaxa");
   if (!el) return;
   if (!row || row.preco == null || !isFinite(Number(row.preco))) { el.textContent = ""; return; }
   const taxa = row.taxa_percent != null ? Number(row.taxa_percent) : (typeof TAXA_PLATAFORMA === "number" ? TAXA_PLATAFORMA : 20);
-  el.textContent = "Total " + money(row.preco) + ". A taxa da plataforma (" + taxa + "%) entra só na conta. Você paga esse total ao motoboy, no PIX ou em dinheiro.";
+  if (formaPagamento === "dinheiro") {
+    el.textContent = "Total " + money(row.preco) + ". Você paga esse valor ao motoboy, em dinheiro. A parte da plataforma entra no acerto depois, sem cobrança a mais.";
+  } else if (formaPagamento === "pix" || formaPagamento === "cartao") {
+    el.textContent = "Total " + money(row.preco) + ". No PIX ou no cartão a cobrança é desse total. A parte da plataforma fica retida na cobrança. Você não paga nada a mais.";
+  } else {
+    el.textContent = "Total " + money(row.preco) + ". A taxa da plataforma (" + taxa + "%) entra só na conta. Você paga esse total ao motoboy.";
+  }
 }
 let formaPagamento = "";
 function textoPagamento(forma) {
@@ -980,7 +1009,7 @@ function textoPagamento(forma) {
   return nomes[forma] ? "Pagamento: " + nomes[forma] : "";
 }
 function escolherForma(forma) {
-  if (!{ pix: 1, dinheiro: 1 }[forma]) return;
+  if (!{ pix: 1, dinheiro: 1, cartao: 1 }[forma]) return;
   formaPagamento = forma;
   document.querySelectorAll("#formasPag button").forEach(b => b.setAttribute("aria-pressed", b.dataset.forma === forma ? "true" : "false"));
   if ($("btnConfirmar")) $("btnConfirmar").disabled = false;
@@ -1013,11 +1042,13 @@ $("deliveryForm").addEventListener("submit", async ev => {
       ...params() });
     if (error) throw error;
     const p = data[0];
+    let cobranca = null;
+    try { cobranca = await registrarCobranca(p.pedido_id, formaPagamento); } catch (err) { cobranca = null; }
     telaSobre("telaConfirmar", false); telaSobre("telaPlano", false);
     mostrarPedido({ id: p.pedido_id, retirada: nomeCheio(origem).trim(), entrega: nomeCheio(destino).trim(), item: $("tipo").value, preco: p.valor,
       status: "procurando", codigo: p.cod, ret_lat: origem.lat, ret_lng: origem.lng, ent_lat: destino.lat, ent_lng: destino.lng,
       ret_numero: origem.numero, ret_complemento: origem.complemento, ent_numero: destino.numero, ent_complemento: destino.complemento,
-      forma_pagamento: formaPagamento });
+      forma_pagamento: formaPagamento, cobranca: cobranca });
   } catch (e) { toast("Não foi possível pedir: " + erroMsg(e), 4000); }
   finally { botao.disabled = false; }
 });
@@ -1043,6 +1074,12 @@ async function mostrarPedido(p) {
   telaSobre("pedido", true); show("btnCancelar", true); show("btnNovo", false); show("avaliar", false); show("btnWhats", true);
   const linhaPag = textoPagamento(p.forma_pagamento);
   if ($("pedidoPag")) { $("pedidoPag").textContent = linhaPag; show("pedidoPag", !!linhaPag); }
+  const aviso = $("avisoCobranca");
+  if (aviso) {
+    const msg = p.cobranca && p.cobranca.mensagem;
+    aviso.textContent = msg || "";
+    show("avisoCobranca", !!msg);
+  }
   $("resumo").textContent = textoEndereco(p.retirada, p.ret_numero, p.ret_complemento) + " → " +
     textoEndereco(p.entrega, p.ent_numero, p.ent_complemento) + " · " + p.item + " · " + money(p.preco);
   if (!mapaPed) {

@@ -155,7 +155,8 @@ for (const f of migrations) {
 const testes = [
   "supabase/tests/rls_test.sql",
   "supabase/tests/compliance_test.sql",
-  "supabase/tests/endereco_chat_test.sql"
+  "supabase/tests/endereco_chat_test.sql",
+  "supabase/tests/acerto_test.sql"
 ];
 let falhas = 0;
 for (const t of testes) {

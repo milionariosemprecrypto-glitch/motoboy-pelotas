@@ -79,7 +79,11 @@ footer { text-align:center; padding:10px 20px 28px; color:#555; font-size:11px; 
 .sheet > div, .sheet > button { max-width:490px; margin-left:auto; margin-right:auto; }
 .sheet h2 { font-size:40px; margin:10px 0 4px; color:var(--primary); font-style:italic; font-weight:800; }
 .pag-destaque { display:block; margin:8px 0; background:#ff6a0022; color:var(--text); border:1px solid var(--primary); border-radius:12px; padding:10px 12px; font-weight:800; font-size:16px; }
-.recebe-moto { display:block; margin:4px 0 8px; font-weight:800; font-size:15px; }
+.recebe-moto { display:block; margin:4px 0 8px; font-weight:700; font-size:14px; color:var(--muted, #6b7280); }
+.como-taxa { margin:12px 0; }
+.como-taxa summary { font-weight:700; cursor:pointer; }
+.linha-ir { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:8px 0; }
+.linha-ir input { width:88px; }
 .tempo { height:6px; background:#2a2a2a; border-radius:4px; overflow:hidden; margin:14px auto 4px; }
 #barraTempo { height:100%; width:100%; background:var(--grad); }
 .total { font-size:38px; font-weight:800; font-style:italic; color:var(--primary); margin:4px 0 6px; }

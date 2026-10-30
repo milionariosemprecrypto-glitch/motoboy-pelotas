@@ -40,6 +40,7 @@ td button.bloq { border-color:#ff3b30; color:#ff3b30; }
         <button id="abaM" class="active" onclick="aba('m')">Motoboys</button>
         <button id="abaC" onclick="aba('c')">Clientes</button>
         <button id="abaP" onclick="aba('p')">Pedidos</button>
+        <button id="abaF" onclick="aba('f')">Financeiro</button>
         <button id="abaR" onclick="aba('r')">Contestações <span id="qtdR"></span></button>
       </div>
       <div id="secM" class="card wrap">
@@ -57,6 +58,14 @@ td button.bloq { border-color:#ff3b30; color:#ff3b30; }
       </div>
       <div id="historico" class="card hidden"><h2>Histórico de status — <span id="histNome"></span> <button class="link" style="display:inline" onclick="show('historico',false)">fechar ✕</button></h2>
         <table><thead><tr><th>Data</th><th>De → Para</th><th>Motivo</th><th>Por</th></tr></thead><tbody id="tbH"></tbody></table></div>
+      <div id="secF" class="card wrap hidden">
+        <h2>Financeiro da plataforma</h2>
+        <p class="small">Totais do período para a conta e para o imposto. A taxa é 20% do preço cheio. PIX e cartão retêm essa parte na cobrança. Dinheiro gera débito do motoboy, compensado nos repasses seguintes.</p>
+        <label for="finInicio">De</label><input id="finInicio" type="date">
+        <label for="finFim">Até</label><input id="finFim" type="date">
+        <button class="secondary" type="button" onclick="carregarFinanceiro()">Ver período</button>
+        <p id="finResumo" class="small"></p>
+      </div>
       <div id="secP" class="card wrap hidden">
         <h2>Pedidos (últimos 200) <button class="link" style="display:inline" onclick="carregarPedidos()">↻ atualizar</button></h2>
         <table><thead><tr><th>Data</th><th>Cliente</th><th>Motoboy</th><th>Retirada → Entrega</th><th>km</th><th>Valor</th><th>Status</th></tr></thead><tbody id="tbP"></tbody></table>
@@ -78,7 +87,16 @@ iniciarAuth({ role: "cliente", exigirAceite: false, aoEntrar: async (u) => {
 }});
 
 function aba(a) {
-  ["m", "c", "p", "r"].forEach(x => { show("sec" + x.toUpperCase(), a === x); $("aba" + x.toUpperCase()).classList.toggle("active", a === x); });
+  ["m", "c", "p", "r", "f"].forEach(x => { show("sec" + x.toUpperCase(), a === x); $("aba" + x.toUpperCase()).classList.toggle("active", a === x); });
+}
+async function carregarFinanceiro() {
+  const ini = $("finInicio").value || null;
+  const fim = $("finFim").value || null;
+  const { data, error } = await db.rpc("admin_financeiro", { p_inicio: ini, p_fim: fim });
+  if (error) { $("finResumo").textContent = erroMsg(error); return; }
+  const r = data && data[0];
+  if (!r) { $("finResumo").textContent = "Sem dados."; return; }
+  $("finResumo").textContent = "Taxa arrecadada " + money(r.taxa_arrecadada) + ". Repassado a motoboys " + money(r.repassado) + ". Débito de dinheiro " + money(r.debito_dinheiro) + ". Pedidos " + r.pedidos + ".";
 }
 async function carregarClientes() {
   const { data, error } = await db.rpc("admin_clientes");

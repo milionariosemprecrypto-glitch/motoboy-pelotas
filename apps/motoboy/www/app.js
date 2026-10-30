@@ -210,7 +210,7 @@ function textoRecebe(o) {
     recebe = Math.round((preco - plat) * 100) / 100;
   }
   if (!isFinite(recebe)) return "";
-  return "Você recebe " + money(recebe) + " (plataforma " + taxa + "%)";
+  return "Você recebe " + money(recebe);
 }
 function mostrarOferta(o) {
   ofertaAtual = o;
@@ -438,23 +438,94 @@ async function sincronizar() {
 }
 setInterval(sincronizar, 5000);
 
+let irLinhas = [];
 async function carregarGanhos() {
   const lista = $("ganhosLista");
   lista.textContent = "";
+  const saldo = await db.rpc("meu_saldo");
+  const s = saldo.data && saldo.data[0];
+  if (saldo.error || !s) {
+    $("ganhosResumo").textContent = "Não foi possível carregar o saldo agora.";
+  } else {
+    $("ganhosTotal").textContent = money(s.saldo);
+    if ($("pillValor")) $("pillValor").textContent = Number(s.saldo).toLocaleString("pt-BR", { minimumFractionDigits: 2 });
+    $("ganhosResumo").textContent = s.pronto ? "Pronto para receber os repasses de PIX e cartão." : "Repasses de PIX e cartão ficam retidos até você completar o cadastro.";
+    $("ganhosDebito").textContent = Number(s.debitos) < 0 ? "Débito de corridas em dinheiro: " + money(Math.abs(Number(s.debitos))) + ". Sai dos próximos repasses." : "";
+    $("ganhosPronto").textContent = "";
+  }
   const { data, error } = await db.rpc("ganhos");
-  if (error) { $("ganhosResumo").textContent = "Não foi possível carregar agora."; return; }
-  const todas = data || [], hoje = new Date().toDateString();
-  const dia = todas.filter(g => new Date(g.entregue_em).toDateString() === hoje);
-  const soma = a => a.reduce((s, g) => s + Number(g.preco), 0);
-  $("ganhosTotal").textContent = money(soma(dia));
-  $("pillValor").textContent = Number(soma(dia)).toLocaleString("pt-BR", { minimumFractionDigits: 2 });
-  $("ganhosResumo").textContent = dia.length + " entrega(s) hoje | " + todas.length + " no total (" + money(soma(todas)) + ")";
-  todas.forEach(g => {
-    const linha = document.createElement("div"); linha.className = "corrida-item";
-    const t = document.createElement("span"); t.textContent = g.retirada + " → " + g.entrega;
-    const v = document.createElement("strong"); v.textContent = money(g.preco);
-    linha.append(t, v); lista.append(linha);
+  if (error) return;
+  (data || []).forEach(g => {
+    const t = document.createElement("span");
+    t.textContent = (g.retirada || "").split(" · ")[0] + " → " + (g.entrega || "").split(" · ")[0];
+    const v = document.createElement("strong");
+    v.textContent = money(g.valor_motoboy != null ? g.valor_motoboy : g.preco);
+    const b = document.createElement("div");
+    b.className = "corrida-item";
+    b.append(t, v);
+    lista.append(b);
   });
+  const rec = await db.rpc("meu_recebimento");
+  const r = rec.data && rec.data[0];
+  if (r) {
+    if ($("rxTipo")) $("rxTipo").value = r.tipo_chave || "cpf";
+    if ($("rxChave")) $("rxChave").value = r.chave_pix || "";
+    if ($("rxTitular")) $("rxTitular").value = r.titular || "";
+    if ($("rxCpf")) $("rxCpf").value = r.cpf || "";
+    if ($("rxBanco")) $("rxBanco").value = r.banco || "";
+    if ($("rxAgencia")) $("rxAgencia").value = r.agencia || "";
+    if ($("rxConta")) $("rxConta").value = r.conta || "";
+    if ($("rxTipoConta")) $("rxTipoConta").value = r.tipo_conta || "";
+  }
+}
+function abrirReceber() { show("telaReceber", true); const el = $("telaReceber"); if (el && el.scrollIntoView) el.scrollIntoView({ block: "nearest" }); }
+async function salvarReceber() {
+  const { data, error } = await db.rpc("salvar_recebimento", {
+    p_tipo_chave: $("rxTipo").value,
+    p_chave_pix: $("rxChave").value,
+    p_titular: $("rxTitular").value,
+    p_cpf: $("rxCpf").value,
+    p_banco: $("rxBanco").value,
+    p_agencia: $("rxAgencia").value,
+    p_conta: $("rxConta").value,
+    p_tipo_conta: $("rxTipoConta").value || null
+  });
+  $("rxMsg").textContent = error ? erroMsg(error) : (data && data[0] && data[0].pronto ? "Pronto para receber." : "Salvo. Ainda falta a chave PIX ou o CPF.");
+  carregarGanhos();
+}
+async function carregarIr() {
+  const ano = Number($("irAno").value) || new Date().getFullYear();
+  const mesTxt = String($("irMes").value || "").trim();
+  const mes = mesTxt ? Number(mesTxt) : null;
+  const { data, error } = await db.rpc("meu_ir", { p_ano: ano, p_mes: mes });
+  if (error) { $("irResumo").textContent = erroMsg(error); return; }
+  irLinhas = data || [];
+  const bruto = irLinhas.reduce((s, x) => s + Number(x.bruto || 0), 0);
+  const taxa = irLinhas.reduce((s, x) => s + Number(x.taxa || 0), 0);
+  const liquido = irLinhas.reduce((s, x) => s + Number(x.liquido || 0), 0);
+  $("irResumo").textContent = irLinhas.length + " corrida(s). Bruto " + money(bruto) + ". Taxas " + money(taxa) + ". Repasse da plataforma " + money(liquido) + ".";
+  const box = $("irLista");
+  box.textContent = "";
+  irLinhas.forEach(x => {
+    const linha = document.createElement("div");
+    linha.className = "corrida-item";
+    const t = document.createElement("span");
+    t.textContent = new Date(x.entregue_em).toLocaleDateString("pt-BR") + " · " + (x.forma || "");
+    const v = document.createElement("strong");
+    v.textContent = money(x.liquido);
+    linha.append(t, v);
+    box.append(linha);
+  });
+}
+function baixarIr() {
+  if (!irLinhas.length) { $("irResumo").textContent = "Veja o período antes de baixar."; return; }
+  const linhas = ["data;forma;bruto;taxa;repasse_plataforma"];
+  irLinhas.forEach(x => linhas.push([new Date(x.entregue_em).toISOString(), x.forma, x.bruto, x.taxa, x.liquido].join(";")));
+  const blob = new Blob([linhas.join("\n")], { type: "text/csv;charset=utf-8" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "eja-ir-" + ($("irAno").value || "ano") + ".csv";
+  a.click();
 }
 
 // ---------- Suspensão / reprovação: motivo e contestação (devido processo) ----------
